@@ -23,10 +23,11 @@ if SERVER then
 end
 
 if CLIENT then
-	function ENT:Draw()
-		self:DrawModel()
+	function ENT:Draw( flags )
+		self:DrawModel( flags )
 	end
 
-	function ENT:DrawTranslucent()
+	function ENT:DrawTranslucent( flags )
+		self:DrawModel( flags )
 	end
 end

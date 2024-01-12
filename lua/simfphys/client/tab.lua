@@ -6,7 +6,6 @@ local ctmul = CreateClientConVar( "cl_simfphys_ctmul", 0.7 , true, true )
 local ctang = CreateClientConVar( "cl_simfphys_ctang", 15 , true, true )
 local hud = CreateClientConVar( "cl_simfphys_hud", "1", true, false )
 local alt_hud = CreateClientConVar( "cl_simfphys_althud", "1", true, false )
-local alt_hud_arc = CreateClientConVar( "cl_simfphys_althud_arcs", "0", true, false )
 
 local hud_x = CreateClientConVar( "cl_simfphys_hud_offset_x", "0", true, false )
 local hud_y = CreateClientConVar( "cl_simfphys_hud_offset_y", "0", true, false )
@@ -14,16 +13,6 @@ local hud_mph = CreateClientConVar( "cl_simfphys_hudmph", "0", true, false )
 local hud_mpg = CreateClientConVar( "cl_simfphys_hudmpg", "0", true, false )
 local hud_realspeed = CreateClientConVar( "cl_simfphys_hudrealspeed", "0", true, false )
 local autostart = CreateClientConVar( "cl_simfphys_autostart", "1", true, true )
-
-local mousesteer = CreateClientConVar( "cl_simfphys_mousesteer", "0", true, true )
-local mssensitivity = CreateClientConVar( "cl_simfphys_ms_sensitivity", "1", true, true )
-local msretract = CreateClientConVar( "cl_simfphys_ms_return", "1", true, true )
-local msdeadzone = CreateClientConVar( "cl_simfphys_ms_deadzone", "3", true, true )
-local msexponent = CreateClientConVar( "cl_simfphys_ms_exponent", "1.5", true, true )
-local mslockpitch = CreateClientConVar( "cl_simfphys_ms_lockpitch", "0", true, true )
-local mshud = CreateClientConVar( "cl_simfphys_ms_hud", "1", true, false )
-local k_msfreelook = CreateClientConVar( "cl_simfphys_ms_keyfreelook", KEY_Y, true, true )
-local mslockedpitch = CreateClientConVar( "cl_simfphys_ms_lockedpitch", "5", true, true )
 
 local overwrite = CreateClientConVar( "cl_simfphys_overwrite", 0, true, true )
 local smoothsteer = CreateClientConVar( "cl_simfphys_smoothsteer", 0, true, true )
@@ -35,50 +24,6 @@ CreateClientConVar( "cl_simfphys_hidesprites", "0", true, false )
 CreateClientConVar( "cl_simfphys_frontlamps", "1", true, false )
 CreateClientConVar( "cl_simfphys_rearlamps", "1", true, false )
 CreateClientConVar( "cl_simfphys_shadows", "0", true, false )
-
-local k_fwd = CreateClientConVar( "cl_simfphys_keyforward", KEY_W , true, true )
-local k_bck = CreateClientConVar( "cl_simfphys_keyreverse", KEY_S , true, true )
-local k_left = CreateClientConVar( "cl_simfphys_keyleft", KEY_A , true, true )
-local k_right = CreateClientConVar( "cl_simfphys_keyright", KEY_D , true, true )
-local k_wot = CreateClientConVar( "cl_simfphys_keywot", KEY_LSHIFT , true, true )
-local k_clth = CreateClientConVar( "cl_simfphys_keyclutch", KEY_LALT , true, true )
-local k_gup = CreateClientConVar( "cl_simfphys_keygearup", MOUSE_LEFT , true, true )
-local k_gdn = CreateClientConVar( "cl_simfphys_keygeardown", MOUSE_RIGHT , true, true )
-local k_hbrk = CreateClientConVar( "cl_simfphys_keyhandbrake", KEY_SPACE , true, true )
-local k_cc = CreateClientConVar( "cl_simfphys_cruisecontrol", KEY_R, true, true )
-local k_lgts = CreateClientConVar( "cl_simfphys_lights", KEY_F , true, true )
-local k_flgts = CreateClientConVar( "cl_simfphys_foglights", KEY_V , true, true )
-local k_horn = CreateClientConVar( "cl_simfphys_keyhorn", KEY_H , true, true )
-local k_engine = CreateClientConVar( "cl_simfphys_keyengine", KEY_I , true, true )
-local k_afwd = CreateClientConVar( "cl_simfphys_key_air_forward", KEY_PAD_8, true, true )
-local k_abck = CreateClientConVar( "cl_simfphys_key_air_reverse", KEY_PAD_2, true, true )
-local k_aleft = CreateClientConVar( "cl_simfphys_key_air_left", k_left:GetInt(), true, true )
-local k_aright = CreateClientConVar( "cl_simfphys_key_air_right", k_right:GetInt(), true, true )
-local k_lock = CreateClientConVar( "cl_simfphys_key_lock", KEY_NONE, true, true )
-local k_turnmenu = CreateClientConVar( "cl_simfphys_key_turnmenu", KEY_COMMA, true, true )
-
-local k_list = {
-	{k_fwd,KEY_W,"Forward"},
-	{k_bck,KEY_S,"Reverse"},
-	{k_left,KEY_A,"Steer Left"},
-	{k_right,KEY_D,"Steer Right"},
-	{k_wot,KEY_LSHIFT,"Throttle Modifier"},
-	{k_clth,KEY_LALT,"Clutch"},
-	{k_gup,MOUSE_LEFT,"Gear Up"},
-	{k_gdn,MOUSE_RIGHT,"Gear Down"},
-	{k_hbrk,KEY_SPACE,"Handbrake"},
-	{k_cc,KEY_R,"Cruise Control"},
-	{k_lgts,KEY_F,"Lights"},
-	{k_flgts,KEY_V,"Foglights"},
-	{k_horn,KEY_H,"Horn / Siren"},
-	{k_engine,KEY_I,"Start/Stop Engine"},
-	{k_afwd,KEY_PAD_8,"Tilt Backward"},
-	{k_abck,KEY_PAD_2,"Tilt Forward"},
-	{k_aleft,KEY_A,"Tilt Left"},
-	{k_aright,KEY_D,"Tilt Right"},
-	{k_lock,KEY_NONE ,"Lock / Unlock"},
-	{k_turnmenu, KEY_COMMA, "Turnsignals"},
-}
 
 local function simplebinder( x, y, tbl, num, parent)
 	local sizex = 500
@@ -195,7 +140,6 @@ local function buildclientsettingsmenu( self )
 	Shape:SetColor( Color( 0, 0, 0, 200 ) )
 	createcheckbox(25,25,"Show Hud","cl_simfphys_hud",self.PropPanel,hud:GetInt())
 	createcheckbox(210,25,"Racing Hud","cl_simfphys_althud",self.PropPanel,alt_hud:GetInt())
-	createcheckbox(210,45,"HQ Racing Hud\n(will cause problems\nwith multicore!)","cl_simfphys_althud_arcs",self.PropPanel,alt_hud_arc:GetInt())
 	createcheckbox(25,45,"MPH instead of KMH","cl_simfphys_hudmph",self.PropPanel,hud_mph:GetInt())
 	createcheckbox(25,65,"Speed relative to \nplayersize instead \nworldsize","cl_simfphys_hudrealspeed",self.PropPanel,hud_realspeed:GetInt())
 	createcheckbox(25,110,"Fuel consumption \nin MPG instead \nof L/100KM","cl_simfphys_hudmpg",self.PropPanel,hud_mpg:GetInt())
@@ -278,96 +222,6 @@ local function buildclientsettingsmenu( self )
 	end
 end
 
-
-local function buildcontrolsmenu( self )
-	local Background = vgui.Create( "DShape", self.PropPanel)
-	Background:SetType( "Rect" )
-	Background:SetPos( 20, 40 )
-	Background:SetColor( Color( 0, 0, 0, 200 ) )
-	
-	local TextLabel = vgui.Create( "DPanel", self.PropPanel)
-	TextLabel:SetPos( 0, 0 )
-	TextLabel:SetSize( 600, 40 )
-	TextLabel.Paint = function()
-		draw.SimpleTextOutlined( "You need to re-enter the vehicle in order for the changes to take effect!", "DSimfphysFont_hint", 300, 20, Color( 255, 0, 0, 255 ), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER , 1,Color( 0, 0, 0, 255 ) ) 
-	end
-	
-	local yy = 45
-	local binders = {}
-	for i = 1, table.Count( k_list ) do
-		binders[i] = simplebinder(25,yy,k_list,i,self.PropPanel)
-		yy = yy + 45
-	end
-	
-	local ResetButton = vgui.Create( "DButton" )
-	ResetButton:SetParent( self.PropPanel )
-	ResetButton:SetText( "Reset" )	
-	ResetButton:SetPos( 25, yy + 10 )
-	ResetButton:SetSize( 500, 25 )
-	ResetButton.DoClick = function()
-		for i = 1, table.Count( binders ) do
-			local kentry = k_list[i]
-			local key = kentry[1]
-			local default = kentry[2]
-			
-			key:SetInt( default )
-			binders[i]:SetValue( default )
-		end
-	end
-	
-	Background:SetSize( 510, yy )
-end
-
-
-local function buildmsmenu( self )
-	local Shape = vgui.Create( "DShape", self.PropPanel)
-	Shape:SetType( "Rect" )
-	Shape:SetPos( 20, 20 )
-	Shape:SetSize( 350, 310 )
-	Shape:SetColor( Color( 0, 0, 0, 200 ) )
-	
-	local msitem_1 = createcheckbox(25,25,"Enable Mouse Steering","cl_simfphys_mousesteer",self.PropPanel,mousesteer:GetInt())
-	local msitem_2 = createcheckbox(25,55,"Lock Pitch View","cl_simfphys_ms_lockpitch",self.PropPanel,mslockpitch:GetInt())
-	local msitem_8 = createcheckbox(25,85,"Show Hud","cl_simfphys_ms_hud",self.PropPanel,mshud:GetInt())
-	
-	
-	local msitem_9 = createslider(60,50,315,40,"","cl_simfphys_ms_lockedpitch",self.PropPanel,-90,90,mslockedpitch:GetFloat())
-	
-	local msitem_4 = createslider(30,110,345,40,"Deadzone","cl_simfphys_ms_deadzone",self.PropPanel,0,16,msdeadzone:GetFloat())
-	local msitem_5 = createslider(30,140,345,40,"Exponent","cl_simfphys_ms_exponent",self.PropPanel,1,4,msexponent:GetFloat())
-	local msitem_6 = createslider(30,170,345,40,"Sensitivity","cl_simfphys_ms_sensitivity",self.PropPanel,0.01,10,mssensitivity:GetFloat())
-	local msitem_7 = createslider(30,200,345,40,"Return Speed","cl_simfphys_ms_return",self.PropPanel,0,10,msretract:GetFloat())
-	
-	local msitem_3 = simplebinder_old(25,240,{{k_msfreelook,KEY_Y,"Unlock View"}},1,self.PropPanel,340, 40)
-	
-	local DermaButton = vgui.Create( "DButton" )
-	DermaButton:SetParent( self.PropPanel )
-	DermaButton:SetText( "Reset" )	
-	DermaButton:SetPos( 25, 300 )
-	DermaButton:SetSize( 340, 25 )
-	DermaButton.DoClick = function()
-		msitem_1:SetValue( 0 )
-		msitem_2:SetValue( 0 )
-		msitem_3:SetValue( KEY_Y )
-		msitem_4:SetValue( 3 )
-		msitem_5:SetValue( 1.5 )
-		msitem_6:SetValue( 1 )
-		msitem_7:SetValue( 1 )
-		msitem_8:SetValue( 1 )
-		msitem_9:SetValue( 5 )
-		
-		mshud:SetInt( 1 )
-		mousesteer:SetInt( 0 )
-		mssensitivity:SetInt( 1 )
-		msretract:SetInt( 1 )
-		msdeadzone:SetFloat( 3 )
-		msexponent:SetFloat( 1.5 )
-		mslockpitch:SetInt( 0 )
-		k_msfreelook:SetInt( KEY_Y )
-		mslockedpitch:SetFloat( 5 )
-	end
-end
-
 local function buildserversettingsmenu( self )
 	local Background = vgui.Create( "DShape", self.PropPanel)
 	Background:SetType( "Rect" )
@@ -376,13 +230,6 @@ local function buildserversettingsmenu( self )
 	local y = 0
 	
 	if LocalPlayer():IsSuperAdmin() then
-		y = y + 25
-		local CheckBoxTeam = vgui.Create( "DCheckBoxLabel", self.PropPanel)
-		CheckBoxTeam:SetPos( 25, y )
-		CheckBoxTeam:SetText( "Disallow players of different teams to enter the same vehicle" )
-		CheckBoxTeam:SetValue( GetConVar( "sv_simfphys_teampassenger" ) :GetInt() )
-		CheckBoxTeam:SizeToContents()
-	
 		y = y + 25
 		local CheckBoxDamage = vgui.Create( "DCheckBoxLabel", self.PropPanel)
 		CheckBoxDamage:SetPos( 25, y )
@@ -473,7 +320,6 @@ local function buildserversettingsmenu( self )
 				net.WriteBool( CheckBoxFuel:GetChecked() )
 				net.WriteFloat( ScaleFuel:GetValue() )
 				net.WriteTable( NewTractionData ) 
-				net.WriteBool( CheckBoxTeam:GetChecked() )
 			net.SendToServer()
 		end
 		
@@ -509,7 +355,6 @@ local function buildserversettingsmenu( self )
 			CheckBoxpDamage:SetValue( 1 )
 			CheckBoxFuel:SetValue( 1 )
 			ScaleFuel:SetValue( 0.1 )
-			CheckBoxTeam:SetValue( 0 )
 			
 			net.Start("simfphys_settings")
 				net.WriteBool( true )
@@ -519,7 +364,6 @@ local function buildserversettingsmenu( self )
 				net.WriteBool( true )
 				net.WriteFloat( 0.1 )
 				net.WriteTable( NewTractionData ) 
-				net.WriteBool( false )
 			net.SendToServer()
 		end
 	else
@@ -602,10 +446,9 @@ local function buildserversettingsmenu( self )
 	Background:SetSize( 350, y )
 end
 
+hook.Add( "LVS.PopulateVehicles", "!!!add_simfphys_vehicles",  function( node, pnlContent, _ )
 
-hook.Add( "PopulateVehicles", "!!!add_simfphys_to_vehicles", function( pnlContent, ogtree, node )
-
-	local tree = ogtree:AddNode( "[simfphys]", "icon16/cog.png" )
+	local tree = node:AddNode( "Cars [Fake Physics]", "icon16/simfphys.png" )
 
 	local Categorised = {}
 
@@ -625,14 +468,23 @@ hook.Add( "PopulateVehicles", "!!!add_simfphys_to_vehicles", function( pnlConten
 	--
 	-- Add a tree node for each category
 	--
+
+	local IconList = list.Get( "ContentCategoryIcons" )
+
 	for CategoryName, v in SortedPairs( Categorised ) do
 		local node
 
 		if CategoryName == "Base" then
 			node = tree
 		else
+			local Icon = "icon16/simfphys_noicon.png"
+
+			if IconList and IconList[ "[simfphys] - "..CategoryName ] then
+				Icon = IconList[ "[simfphys] - "..CategoryName ]
+			end
+
 			-- Add a node to the tree
-			node = tree:AddNode( CategoryName, "icon16/bricks.png" )
+			node = tree:AddNode( CategoryName, Icon )
 		end
 
 		-- When we click on the node - populate it using this function
@@ -668,39 +520,7 @@ hook.Add( "PopulateVehicles", "!!!add_simfphys_to_vehicles", function( pnlConten
 		end
 
 	end
-	
-	-- KEYBOARD
-	local node = tree:AddNode( "Controls", "icon16/keyboard.png" )
-	node.DoPopulate = function( self )
-		if self.PropPanel then return end
-		
-		self.PropPanel = vgui.Create( "ContentContainer", pnlContent )
-		self.PropPanel:SetVisible( false )
-		self.PropPanel:SetTriggerSpawnlistChange( false )
 
-		buildcontrolsmenu( self )
-	end
-	node.DoClick = function( self )
-		self:DoPopulate()
-		pnlContent:SwitchPanel( self.PropPanel )
-	end
-	
-	-- MOUSE STEERING
-	local node = tree:AddNode( "Mouse Steering", "icon16/mouse.png" )
-	node.DoPopulate = function( self )
-		if self.PropPanel then return end
-		
-		self.PropPanel = vgui.Create( "ContentContainer", pnlContent )
-		self.PropPanel:SetVisible( false )
-		self.PropPanel:SetTriggerSpawnlistChange( false )
-
-		buildmsmenu( self )
-	end
-	node.DoClick = function( self )
-		self:DoPopulate()
-		pnlContent:SwitchPanel( self.PropPanel )
-	end
-	
 	-- JOYSTICK
 	if istable( jcon ) and file.Exists("lua/bin/gmcl_joystick_win32.dll", "GAME") then
 		
@@ -709,9 +529,9 @@ hook.Add( "PopulateVehicles", "!!!add_simfphys_to_vehicles", function( pnlConten
 			RunConsoleCommand("joyconfig") 
 		end
 	end
-	
+
 	-- CLIENT SETTINGS
-	local node = tree:AddNode( "Client Settings", "icon16/wrench.png" )
+	local node = tree:AddNode( "Preferences", "icon16/ruby.png" )
 	node.DoPopulate = function( self )
 		if self.PropPanel then return end
 		
@@ -727,7 +547,7 @@ hook.Add( "PopulateVehicles", "!!!add_simfphys_to_vehicles", function( pnlConten
 	end
 	
 	-- SERVER SETTINGS
-	local node = tree:AddNode( "Server Settings", "icon16/wrench_orange.png" )
+	local node = tree:AddNode( "Settings", "icon16/shield.png" )
 	node.DoPopulate = function( self )
 		self.PropPanel = vgui.Create( "ContentContainer", pnlContent )
 		self.PropPanel:SetVisible( false )
@@ -743,6 +563,7 @@ hook.Add( "PopulateVehicles", "!!!add_simfphys_to_vehicles", function( pnlConten
 	-- call original hook
 	hook.Run( "SimfphysPopulateVehicles", pnlContent, tree, node )
 end )
+
 
 spawnmenu.AddContentType( "simfphys_vehicles", function( container, obj )
 	if not obj.material then return end
@@ -777,3 +598,9 @@ spawnmenu.AddContentType( "simfphys_vehicles", function( container, obj )
 	return icon
 
 end )
+
+list.Set( "ContentCategoryIcons", "simfphys", "icon16/simfphys.png" )
+list.Set( "ContentCategoryIcons", "[simfphys]", "icon16/simfphys.png" )
+list.Set( "ContentCategoryIcons", "[simfphys] - Half Life 2 - Prewar", "icon16/simfphys_prewar.png" )
+list.Set( "ContentCategoryIcons", "[simfphys] - Half Life 2 / Synergy", "icon16/simfphys_hl2.png" )
+list.Set( "ContentCategoryIcons", "[simfphys] - Armed Vehicles", "icon16/simfphys_armed.png" )

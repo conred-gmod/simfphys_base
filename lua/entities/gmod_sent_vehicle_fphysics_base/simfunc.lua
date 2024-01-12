@@ -1,46 +1,47 @@
 function ENT:WheelOnGround()
 	self.FrontWheelPowered = self:GetPowerDistribution() ~= 1
 	self.RearWheelPowered = self:GetPowerDistribution() ~= -1
-	
+
 	for i = 1, table.Count( self.Wheels ) do
-		local Wheel = self.Wheels[i]		
-		if IsValid(Wheel) then
-			local dmgMul = Wheel:GetDamaged() and 0.5 or 1
-			local surfacemul = simfphys.TractionData[Wheel:GetSurfaceMaterial():lower()]
-			
-			self.VehicleData[ "SurfaceMul_" .. i ] = (surfacemul and math.max(surfacemul,0.001) or 1) * dmgMul
-			
-			local WheelPos = self:LogicWheelPos( i )
-			
-			local WheelRadius = WheelPos.IsFrontWheel and self.FrontWheelRadius or self.RearWheelRadius
-			local startpos = Wheel:GetPos()
-			local dir = -self.Up
-			local len = WheelRadius + math.Clamp(-self.Vel.z / 50,2.5,6)
-			local HullSize = Vector(WheelRadius,WheelRadius,0)
-			local tr = util.TraceHull( {
-				start = startpos,
-				endpos = startpos + dir * len,
-				maxs = HullSize,
-				mins = -HullSize,
-				filter = self.VehicleData["filter"]
-			} )
-			
-			if tr.Hit then
-				self.VehicleData[ "onGround_" .. i ] = 1
-				Wheel:SetSpeed( Wheel.FX )
-				Wheel:SetSkidSound( Wheel.skid )
-				Wheel:SetSurfaceMaterial( util.GetSurfacePropName( tr.SurfaceProps ) )
-				Wheel:SetOnGround(1)
-			else
-				self.VehicleData[ "onGround_" .. i ] = 0
-				Wheel:SetOnGround(0)
-			end
+		local Wheel = self.Wheels[i]	
+		
+		if not IsValid( Wheel ) then continue end
+
+		local dmgMul = Wheel:GetDamaged() and 0.5 or 1
+		local surfacemul = simfphys.TractionData[Wheel:GetSurfaceMaterial():lower()]
+
+		self.VehicleData[ "SurfaceMul_" .. i ] = (surfacemul and math.max(surfacemul,0.001) or 1) * dmgMul
+
+		local WheelPos = self:LogicWheelPos( i )
+
+		local WheelRadius = WheelPos.IsFrontWheel and self.FrontWheelRadius or self.RearWheelRadius
+		local startpos = Wheel:GetPos()
+		local dir = -self.Up
+		local len = WheelRadius + math.Clamp(-self.Vel.z / 50,2.5,6)
+		local HullSize = Vector(WheelRadius,WheelRadius,0)
+		local tr = util.TraceHull( {
+			start = startpos,
+			endpos = startpos + dir * len,
+			maxs = HullSize,
+			mins = -HullSize,
+			filter = self.VehicleData["filter"]
+		} )
+
+		if tr.Hit then
+			self.VehicleData[ "onGround_" .. i ] = 1
+			Wheel:SetSpeed( Wheel.FX )
+			Wheel:SetSkidSound( Wheel.skid )
+			Wheel:SetSurfaceMaterial( util.GetSurfacePropName( tr.SurfaceProps ) )
+			Wheel:SetOnGround(1)
+		else
+			self.VehicleData[ "onGround_" .. i ] = 0
+			Wheel:SetOnGround(0)
 		end
 	end
-	
+
 	local FrontOnGround = math.max(self.VehicleData[ "onGround_1" ],self.VehicleData[ "onGround_2" ])
 	local RearOnGround = math.max(self.VehicleData[ "onGround_3" ],self.VehicleData[ "onGround_4" ],self.VehicleData[ "onGround_5" ],self.VehicleData[ "onGround_6" ])
-	
+
 	self.DriveWheelsOnGround = math.max(self.FrontWheelPowered and FrontOnGround or 0,self.RearWheelPowered and RearOnGround or 0)
 end
 
@@ -318,6 +319,7 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 	local MaxGrip = self:GetMaxTraction()
 	local Efficiency = self:GetEfficiency()
 	local GripOffset = self:GetTractionBias() * MaxGrip
+	local wVel = 0
 
 	for i = 1, table.Count( self.Wheels ) do
 		local Wheel = self.Wheels[i]
@@ -379,23 +381,33 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 			local Force = -Right * math.Clamp(Fy,-GripRemaining,GripRemaining) + Forward * Power
 			
 			local wRad = Wheel:GetDamaged() and Wheel.dRadius or WheelRadius
-			local TurnWheel = ((Fx + GripLoss * 35 * signEngineTorque * IsPoweredWheel) / wRad * 1.85) + self.EngineRPM / 80 * (1 - OnGround) * IsPoweredWheel * (1 - k_clutch)
-			
+			local wFX = (Fx + GripLoss * 35 * signEngineTorque * IsPoweredWheel)
+			local TurnWheel = (wFX / wRad * 1.85) + self.EngineRPM / 80 * (1 - OnGround) * IsPoweredWheel * (1 - k_clutch)
+
 			Wheel.FX = Fx
 			Wheel.skid = ((MaxTraction - (MaxTraction - Vector(absFy,math.abs(ForwardForce * 10),0):Length())) / MaxTraction) - 10
-			
-			local RPM = (absFx / (3.14 * WheelDiameter)) * 52 * OnGround
+
+			local RPM = Wheel:VelToRPM( absFx ) * OnGround
 			local GripLossFaktor = math.Clamp(GripLoss,0,MaxTraction) / MaxTraction
-			
+	
+			local abswFX = math.abs( wFX )
+			Wheel:SetRPM( Wheel:VelToRPM( wFX ) )
+			if IsPoweredWheel then
+				if abswFX > wVel then
+					wVel = abswFX
+				end
+			end
+
 			self.VehicleData[ "WheelRPM_".. i ] = RPM
 			self.VehicleData[ "GripLossFaktor_".. i ] = GripLossFaktor
 			self.VehicleData[ "Exp_GLF_".. i ] = GripLossFaktor ^ 2
+
 			Wheel:SetGripLoss( GripLossFaktor )
-			
+
 			local WheelOPow = math.abs( self.CurrentGear == 1 and math.min( TorqueConv, 0 ) or math.max( TorqueConv, 0 ) ) > 0
 			local FrontWheelCanTurn = (WheelOPow and 0 or self.Brake) < MaxTraction * 1.75
 			local RearWheelCanTurn = (self.HandBrake < MaxTraction) and (WheelOPow and 0 or self.Brake) < MaxTraction * 2
-			
+
 			if WheelPos.IsFrontWheel then
 				if FrontWheelCanTurn then
 					self.VehicleData[ "spin_" .. i ] = self.VehicleData[ "spin_" .. i ] + TurnWheel
@@ -405,29 +417,34 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 					self.VehicleData[ "spin_" .. i ] = self.VehicleData[ "spin_" .. i ] + TurnWheel
 				end
 			end
-			
+
 			if self.CustomWheels then
 				local GhostEnt = self.GhostWheels[i]
-				local Angle = GhostEnt:GetAngles()
-				local offsetang = WheelPos.IsFrontWheel and self.CustomWheelAngleOffset or (self.CustomWheelAngleOffset_R or self.CustomWheelAngleOffset)
-				local Direction = GhostEnt:LocalToWorldAngles( offsetang ):Forward()
-				local TFront = FrontWheelCanTurn and TurnWheel or 0
-				local TBack = RearWheelCanTurn and TurnWheel or 0
-				
-				local AngleStep = WheelPos.IsFrontWheel and TFront or TBack
-				Angle:RotateAroundAxis(Direction, WheelPos.IsRightWheel and AngleStep or -AngleStep)
-				
-				self.GhostWheels[i]:SetAngles( Angle )
+	
+				if IsValid( GhostEnt ) then
+					local Angle = GhostEnt:GetAngles()
+					local offsetang = WheelPos.IsFrontWheel and self.CustomWheelAngleOffset or (self.CustomWheelAngleOffset_R or self.CustomWheelAngleOffset)
+					local Direction = GhostEnt:LocalToWorldAngles( offsetang ):Forward()
+					local TFront = FrontWheelCanTurn and TurnWheel or 0
+					local TBack = RearWheelCanTurn and TurnWheel or 0
+					
+					local AngleStep = WheelPos.IsFrontWheel and TFront or TBack
+					Angle:RotateAroundAxis(Direction, WheelPos.IsRightWheel and AngleStep or -AngleStep)
+					
+					self.GhostWheels[i]:SetAngles( Angle )
+				end
 			else
 				self:SetPoseParameter(self.VehicleData[ "pp_spin_" .. i ],self.VehicleData[ "spin_" .. i ]) 
 			end
-			
+
 			if not self.PhysicsEnabled then
 				Wheel:GetPhysicsObject():ApplyForceCenter( Force * 185 * OnGround )
 			end
 		end
 	end
-	
+
+	self:SetWheelVelocity( wVel )
+
 	local target_diff = math.max(LimitRPM * 0.95 - self.EngineRPM,0)
 	
 	if self.FrontWheelPowered and self.RearWheelPowered then
@@ -449,7 +466,7 @@ function ENT:SimulateWheels(k_clutch,LimitRPM)
 		self.WheelRPM = 0
 		self.RPM_DIFFERENCE = 0
 		self.exprpmdiff = 0
-	end	
+	end
 end
 
 function ENT:SimulateTurbo(LimitRPM)

@@ -4,7 +4,7 @@ surface.CreateFont( "simfphysfont", {
 	font = "Verdana",
 	extended = false,
 	size = ScrH() >= 900 and (ScrH() >= 1080 and 20 or 18) or 12,
-	weight = 500,
+	weight = 600,
 	blursize = 0,
 	scanlines = 0,
 	antialias = true,
@@ -13,7 +13,7 @@ surface.CreateFont( "simfphysfont", {
 	strikeout = false,
 	symbol = false,
 	rotary = false,
-	shadow = false,
+	shadow = true,
 	additive = false,
 	outline = false,
 } )

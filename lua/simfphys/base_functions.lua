@@ -4,7 +4,6 @@ CreateConVar( "sv_simfphys_playerdamage", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE
 CreateConVar( "sv_simfphys_damagemultiplicator", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE},"vehicle damage multiplicator" )
 CreateConVar( "sv_simfphys_fuel", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE},"enable fuel? 1 = enabled, 0 = disabled" )
 CreateConVar( "sv_simfphys_fuelscale", "0.1", {FCVAR_REPLICATED , FCVAR_ARCHIVE},"fuel tank size multiplier. 1 = Realistic fuel tank size (about 2-3 hours of fullthrottle driving, Lol, have fun)" )
-CreateConVar( "sv_simfphys_teampassenger", "0", {FCVAR_REPLICATED , FCVAR_ARCHIVE},"allow players of different teams to enter the same vehicle?, 0 = allow everyone, 1 = team only" )
 
 simfphys.DamageEnabled = false
 simfphys.DamageMul = 1
@@ -12,27 +11,8 @@ simfphys.pDamageEnabled = false
 simfphys.Fuel = true
 simfphys.FuelMul = 0.1
 
-simfphys.VERSION = 473
+simfphys.VERSION = 494
 simfphys.VERSION_GITHUB = 0
-
-simfphys.VERSION_TYPE = "MGT"
-simfphys.VERSION_KEY = "/QmbzfsLfzEpxo"
-
-simfphys.pSwitchKeys = {[KEY_1] = 1,[KEY_2] = 2,[KEY_3] = 3,[KEY_4] = 4,[KEY_5] = 5,[KEY_6] = 6,[KEY_7] = 7,[KEY_8] = 8,[KEY_9] = 9,[KEY_0] = 10}
-simfphys.pSwitchKeysInv = {[1] = KEY_1,[2] = KEY_2,[3] = KEY_3,[4] = KEY_4,[5] = KEY_5,[6] = KEY_6,[7] = KEY_7,[8] = KEY_8,[9] = KEY_9,[10] = KEY_0}
-
-FUELTYPE_NONE = 0
-FUELTYPE_PETROL = 1
-FUELTYPE_DIESEL = 2
-FUELTYPE_ELECTRIC = 3
-
-game.AddParticles("particles/vehicle.pcf")
-game.AddParticles("particles/fire_01.pcf")
-
-PrecacheParticleSystem("fire_large_01")
-PrecacheParticleSystem("WheelDust")
-PrecacheParticleSystem("smoke_gib_01")
-PrecacheParticleSystem("burning_engine_01")
 
 cvars.AddChangeCallback( "sv_simfphys_enabledamage", function( convar, oldValue, newValue ) simfphys.DamageEnabled = ( tonumber( newValue )~=0 ) end)
 cvars.AddChangeCallback( "sv_simfphys_damagemultiplicator", function( convar, oldValue, newValue ) simfphys.DamageMul = tonumber( newValue ) end)
@@ -61,7 +41,7 @@ simfphys.rock = CreateConVar( "sv_simfphys_traction_rock", "1", {FCVAR_REPLICATE
 simfphys.wood = CreateConVar( "sv_simfphys_traction_wood", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE})
 
 function simfphys:GetVersion()
-	return simfphys.VERSION or 1.2
+	return simfphys.VERSION
 end
 
 function simfphys:CheckUpdates()
@@ -97,34 +77,23 @@ hook.Add( "InitPostEntity", "!!!simfphyscheckupdates", function()
 	end)
 end )
 
-hook.Add( "CanProperty", "!!!!simfphysEditPropertiesDisabler", function( ply, property, ent )
-	if not IsValid( ent ) or ent:GetClass() ~= "gmod_sent_vehicle_fphysics_base" then return end
-
-	if not ply:IsAdmin() and property == "editentity" then return false end
-end )
-
 function simfphys.IsCar( ent )
 	if not IsValid( ent ) then return false end
-	
-	local IsVehicle = ent:GetClass():lower() == "gmod_sent_vehicle_fphysics_base"
-	
-	return IsVehicle
+
+	return ent.LVSsimfphys == true
 end
 
 local meta = FindMetaTable( "Player" )
 function meta:IsDrivingSimfphys()
 	local Car = self:GetSimfphys()
 	local Pod = self:GetVehicle()
-	
-	if not IsValid( Pod ) or not IsValid( Car ) then return false end
-	if not Car.GetDriverSeat or not isfunction( Car.GetDriverSeat ) then return false end
-	
+
+	if not IsValid( Car ) then return false end
+
 	return Pod == Car:GetDriverSeat()
 end
 
 function meta:GetSimfphys()
-	if not self:InVehicle() then return NULL end
-	
 	local Pod = self:GetVehicle()
 	
 	if not IsValid( Pod ) then return NULL end
@@ -133,22 +102,24 @@ function meta:GetSimfphys()
 		
 		return Pod.SPHYSBaseEnt
 		
-	elseif Pod.SPHYSchecked == nil then
-
+	else 
 		local Parent = Pod:GetParent()
-		
-		if not IsValid( Parent ) then Pod.SPHYSchecked = false return NULL end
-		
-		if not simfphys.IsCar( Parent ) then Pod.SPHYSchecked = false return NULL end
-		
+
+		if not IsValid( Parent ) then return NULL end
+
+		if not Parent.LVSsimfphys then
+			Pod.SPHYSchecked = LVS.MapDoneLoading
+			Pod.SPHYSBaseEnt = NULL
+			Pod.vehiclebase = NULL
+
+			return NULL
+		end
+
 		Pod.SPHYSchecked = true
 		Pod.SPHYSBaseEnt = Parent
 		Pod.vehiclebase = Parent -- compatibility for old addons
-		
+
 		return Parent
-	else
-		
-		return NULL
 	end
 end
 
@@ -216,18 +187,14 @@ if SERVER then
 		local fuelscale = tostring(net.ReadFloat())
 		
 		local newtraction = net.ReadTable() 
-		
-		local teamonly = tostring(net.ReadBool() and 1 or 0)
-		
+
 		RunConsoleCommand("sv_simfphys_enabledamage", dmgEnabled ) 
 		RunConsoleCommand("sv_simfphys_gib_lifetime", giblifetime )
 		RunConsoleCommand("sv_simfphys_damagemultiplicator", dmgMul ) 
 		RunConsoleCommand("sv_simfphys_playerdamage", pdmgEnabled ) 
 		RunConsoleCommand("sv_simfphys_fuel", fuel ) 
 		RunConsoleCommand("sv_simfphys_fuelscale", fuelscale ) 
-		
-		RunConsoleCommand("sv_simfphys_teampassenger", teamonly ) 
-		
+
 		for k, v in pairs( newtraction ) do
 			RunConsoleCommand("sv_simfphys_traction_"..k, v) 
 		end

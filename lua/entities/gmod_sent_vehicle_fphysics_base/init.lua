@@ -1,10 +1,34 @@
 AddCSLuaFile( "shared.lua" )
 AddCSLuaFile( "cl_init.lua" )
+AddCSLuaFile( "cl_tiresounds.lua" )
 include("shared.lua")
 include("spawn.lua")
 include("simfunc.lua")
 include("numpads.lua")
 include("damage.lua")
+
+function ENT:AlignView( ply )
+	if not IsValid( ply ) then return end
+
+	timer.Simple( 0, function()
+		if not IsValid( ply ) or not IsValid( self ) then return end
+
+		local Ang = Angle(0,90,0)
+
+		local pod = ply:GetVehicle()
+		local MouseAim = ply:lvsMouseAim() and self:GetDriver() == ply
+
+		if MouseAim and IsValid( pod ) then
+			Ang = pod:LocalToWorldAngles( Angle(0,90,0) )
+			Ang.r = 0
+		end
+
+		ply:SetEyeAngles( Ang )
+	end)
+end
+
+function ENT:TakeCollisionDamage( damage, attacker )
+end
 
 local function EntityLookup(CreatedEntities)
 	return function(id, default)
@@ -52,11 +76,12 @@ end
 
 function ENT:Think()
 	local Time = CurTime()
-	
+
+	self:PhysicsThink()
 	self:OnTick()
-	
+
 	hook.Run( "simfphysOnTick", self, Time )
-	
+
 	self.NextTick = self.NextTick or 0
 	if self.NextTick < Time then
 		self.NextTick = Time + 0.025
@@ -67,7 +92,7 @@ function ENT:Think()
 			
 			local OldDriver = self:GetDriver()
 			if OldDriver ~= Driver then
-				if self:GetIsVehicleLocked() then
+				if self:GetlvsLockedStatus() then
 					self:UnLock()
 				end
 
@@ -366,6 +391,24 @@ function ENT:OnActiveChanged( name, old, new)
 	end
 end
 
+function ENT:OnHealthChanged( name, OldHealth, NewHealth)
+	if NewHealth == OldHealth or NewHealth < OldHealth then return end
+
+	local MaxHealth = self:GetMaxHealth()
+
+	if NewHealth > (MaxHealth * 0.6) then
+		self:SetOnFire( false )
+		self:SetOnSmoke( false )
+	end
+
+	if NewHealth > (MaxHealth * 0.3) then
+		self:SetOnFire( false )
+		if NewHealth <= (MaxHealth * 0.6) then
+			self:SetOnSmoke( true )
+		end
+	end
+end
+
 function ENT:OnThrottleChanged( name, old, new)
 	if new == old then return end
 	
@@ -581,6 +624,16 @@ function ENT:SimulateVehicle( curtime )
 			self:WheelOnGround()
 			self.WheelOnGroundDelay = curtime + 0.15
 		end
+	else
+		self:SetWheelVelocity( 0 )
+
+		for i = 1, table.Count( self.Wheels ) do
+			local Wheel = self.Wheels[i]
+			
+			if not IsValid( Wheel ) or Wheel:GetRPM() == 0 then continue end
+
+			Wheel:SetRPM( 0 )
+		end
 	end
 	
 	if self.CustomWheels then
@@ -682,10 +735,7 @@ function ENT:SetupControls( ply )
 		
 		local k_engine_dn = numpad.OnDown( ply, I, "k_eng",self, true )
 		local k_engine_up = numpad.OnUp( ply, I, "k_eng",self, false )
-		
-		local k_lock_dn = numpad.OnDown( ply, lock, "k_lock",self, true )
-		local k_lock_up = numpad.OnUp( ply, lock, "k_lock",self, false )
-		
+
 		self.keys = {
 			w_dn,w_up,
 			s_dn,s_up,
@@ -705,21 +755,8 @@ function ENT:SetupControls( ply )
 			k_horn_dn,k_horn_up,
 			k_flights_dn,k_flights_up,
 			k_engine_dn,k_engine_up,
-			k_lock_dn,k_lock_up,
 		}
 	end
-end
-
-function ENT:PlayAnimation( animation )
-	local anims = string.Implode( ",", self:GetSequenceList() )
-	
-	if not animation or not string.match( string.lower(anims), string.lower( animation ), 1 ) then return end
-	
-	local sequence = self:LookupSequence( animation )
-	
-	self:ResetSequence( sequence )
-	self:SetPlaybackRate( 1 ) 
-	self:SetSequence( sequence )
 end
 
 function ENT:PhysicalSteer()
@@ -745,10 +782,6 @@ function ENT:PhysicalSteer()
 		
 		self.SteerMaster2:SetAngles( self:LocalToWorldAngles( Angle(0,math.Clamp(self.VehicleData[ "Steer" ],-self.CustomSteerAngle,self.CustomSteerAngle),0) ) )
 	end
-end
-
-function ENT:IsInitialized()
-	return (self.EnableSuspension == 1)
 end
 
 function ENT:EngineActive()
@@ -915,18 +948,6 @@ function ENT:SteerVehicle( steer )
 	self:SetVehicleSteer( steer / self.VehicleData["steerangle"] )
 end
 
-function ENT:Lock()
-	if hook.Run( "simfphysOnLock", self, true ) then return end
-	self:SetIsVehicleLocked( true )
-	self:EmitSound( "doors/latchlocked2.wav" )
-end
-
-function ENT:UnLock()
-	if hook.Run( "simfphysOnLock", self, false ) then return end
-	self:SetIsVehicleLocked( false )
-	self:EmitSound( "doors/latchunlocked1.wav" )
-end
-
 function ENT:ForceLightsOff()
 	local vehiclelist = list.Get( "simfphys_lights" )[self.LightsTable] or false
 	if not vehiclelist then return end
@@ -995,109 +1016,32 @@ function ENT:EnteringSequence( ply )
 end
 
 function ENT:GetMouseSteer()
-	if IsValid(self.DriverSeat) then return (self.DriverSeat.ms_Steer or 0) end
-	
-	return 0
-end
+	local Driver = self:GetDriver()
 
-function ENT:Use( ply )
-	if not IsValid( ply ) then return end
-	
-	if hook.Run( "simfphysUse", self, ply ) then return end
+	if not IsValid( Driver ) or not Driver.lvsMouseAim or not Driver:lvsMouseAim() then return 0 end
 
-	if self:GetIsVehicleLocked() or self:HasPassengerEnemyTeam( ply ) then 
-		self:EmitSound( "doors/default_locked.wav" )
+	local TargetAngle = Driver:EyeAngles()
 
-		return
+	local pod = self:GetDriverSeat()
+
+	if not IsValid( pod ) then return end
+
+	local ang = self:GetAngles()
+	ang.y = pod:GetAngles().y + 90
+
+	local Forward = ang:Right()
+	local View = pod:WorldToLocalAngles( TargetAngle ):Forward()
+
+	local Reversed = false
+	if self:AngleBetweenNormal( View, ang:Forward() ) < 90 then
+		Reversed = self:GetGear() == 1
 	end
 
-	self:SetPassenger( ply )
-end
+	local LocalAngSteer = (self:AngleBetweenNormal( View, ang:Right() ) - 90) / self.MouseSteerAngle
 
-function ENT:SetPassenger( ply )
-	if not IsValid( ply ) then return end
-	
-	if not IsValid(self:GetDriver()) and not ply:KeyDown(IN_WALK) then
-		ply:SetAllowWeaponsInVehicle( false ) 
-		if IsValid(self.DriverSeat) then
-			
-			self:EnteringSequence( ply )
-			ply:EnterVehicle( self.DriverSeat )
-			
-			timer.Simple( 0.01, function()
-				if IsValid(ply) then
-					local angles = Angle(0,90,0)
-					ply:SetEyeAngles( angles )
-				end
-			end)
-		end
-	else
-		if self.PassengerSeats then
-			local closestSeat = self:GetClosestSeat( ply )
-			
-			if not closestSeat or IsValid( closestSeat:GetDriver() ) then
-				
-				for i = 1, table.Count( self.pSeat ) do
-					if IsValid(self.pSeat[i]) then
-						
-						local HasPassenger = IsValid(self.pSeat[i]:GetDriver())
-						
-						if not HasPassenger then
-							ply:EnterVehicle( self.pSeat[i] )
-							break
-						end
-					end
-				end
-			else
-				ply:EnterVehicle( closestSeat )
-			end
-		end
-	end
-end
+	local Steer = (math.min( math.abs( LocalAngSteer ), 1 ) ^ self.MouseSteerExponent * self:Sign( LocalAngSteer ))
 
-function ENT:GetClosestSeat( ply )
-	local Seat = self.pSeat[1]
-	if not IsValid(Seat) then return false end
-	
-	local Distance = (Seat:GetPos() - ply:GetPos()):Length()
-	
-	for i = 1, table.Count( self.pSeat ) do
-		local Dist = (self.pSeat[i]:GetPos() - ply:GetPos()):Length()
-		if (Dist < Distance) then
-			Seat = self.pSeat[i]
-		end
-	end
-	
-	return Seat
-end
-
-function ENT:HasPassengerEnemyTeam( ply )
-	if not GetConVar( "sv_simfphys_teampassenger" ):GetBool() then return false end
-	
-	if not IsValid( ply ) then return true end
-	
-	local myteam = ply:Team()
-	if IsValid( self:GetDriver() ) then
-		if self:GetDriver():Team() ~= myteam then
-			return true
-		end
-	end
-	
-	if self.PassengerSeats then
-		for i = 1, table.Count( self.pSeat ) do
-			if IsValid(self.pSeat[i]) then
-				
-				local Passenger = self.pSeat[i]:GetDriver()
-				if IsValid( Passenger ) then
-					if Passenger:Team() ~= myteam then
-						return true
-					end
-				end
-			end
-		end
-	end
-	
-	return false
+	return -Steer
 end
 
 function ENT:SetPhysics( enable )
@@ -1371,12 +1315,12 @@ function ENT:SetOnSmoke( bOn )
 	end
 end
 
-function ENT:SetMaxHealth( nHealth )
-	self:SetNWFloat( "MaxHealth", nHealth )
+function ENT:SetMaxHP( nHealth )
+	self:SetMaxHealth( nHealth )
 end
 
-function ENT:SetCurHealth( nHealth )
-	self:SetNWFloat( "Health", nHealth )
+function ENT:SetMaxHealth( nHealth )
+	self:SetNWFloat( "MaxHealth", nHealth )
 end
 
 function ENT:SetMaxFuel( nFuel )
@@ -1398,4 +1342,77 @@ end
 function ENT:SetFuelPos( vPos )
 	self:SetFuelPortPosition( vPos )
 end
+
+function ENT:OnMaintenance()
+	net.Start( "simfphys_lightsfixall" )
+		net.WriteEntity( self )
+	net.Broadcast()
+	
+	self:OnRepaired()
+
+	local Fuel = self:GetFuel()
+	local MaxFuel = self:GetMaxFuel()
+
+	if Fuel ~= MaxFuel then
+		self:SetFuel( MaxFuel )
+		self:OnRefueled()
+	end
+
+	if istable(self.Wheels) then
+		for i = 1, table.Count( self.Wheels ) do
+			local Wheel = self.Wheels[ i ]
+			if IsValid(Wheel) then
+				Wheel:SetDamaged( false )
+			end
+		end
+	end
+
+	hook.Run( "simfphysOnRepaired", self )
+end
+
+function ENT:AddFuelTank( fueltype )
+	if IsValid( self:GetFuelTank() ) then return end
+
+	local FuelTank = ents.Create( "gmod_sent_vehicle_fphysics_fueltank" )
+
+	if not IsValid( FuelTank ) then
+		self:Remove()
+
+		print("LVS: Failed to create fueltank entity. Vehicle terminated.")
+
+		return
+	end
+
+	FuelTank:SetPos( self:GetPos() )
+	FuelTank:SetAngles( self:GetAngles() )
+	FuelTank:Spawn()
+	FuelTank:Activate()
+	FuelTank:SetParent( self )
+	FuelTank:SetBase( self )
+
+	self:SetFuelTank( FuelTank )
+
+	self:DeleteOnRemove( FuelTank )
+
+	self:TransferCPPI( FuelTank )
+end
+
+function ENT:OnRefueled()
+	local FuelTank = self:GetFuelTank()
+
+	if not IsValid( FuelTank ) then return end
+
+	FuelTank:EmitSound( "vehicles/jetski/jetski_no_gas_start.wav" )
+end
+
+function ENT:SetRoadkillAttacker( ply )
+	local T = CurTime()
+
+	if (self._nextSetAttacker or 0) > T then return end
+
+	self._nextSetAttacker = T + 1
+
+	self:SetPhysicsAttacker( ply, 1.1 )
+end
+
 

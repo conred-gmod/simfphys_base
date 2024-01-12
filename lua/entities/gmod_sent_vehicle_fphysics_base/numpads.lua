@@ -64,7 +64,7 @@ end )
 
 numpad.Register( "k_a_right", function( pl, ent, keydown )
 	if not IsValid(pl) or not IsValid(ent) then return false end
-	
+
 	if ent.PressedKeys then
 		ent.PressedKeys["aD"] = keydown
 	end
@@ -72,12 +72,12 @@ end )
 
 numpad.Register( "k_gup", function( pl, ent, keydown )
 	if not IsValid(pl) or not IsValid(ent) then return false end
-	if pl.blockcontrols then keydown = false end
-	
+	if not pl:lvsGetInputEnabled() then keydown = false end
+
 	if ent.PressedKeys then
 		ent.PressedKeys["M1"] = keydown
 	end
-	
+
 	if keydown and ent:GetIsCruiseModeOn() then
 		ent:SetIsCruiseModeOn( false )
 	end
@@ -85,12 +85,12 @@ end )
 
 numpad.Register( "k_gdn", function( pl, ent, keydown )
 	if not IsValid(pl) or not IsValid(ent) then return false end
-	if pl.blockcontrols then keydown = false end
-	
+	if not pl:lvsGetInputEnabled() then keydown = false end
+
 	if ent.PressedKeys then
 		ent.PressedKeys["M2"] = keydown
 	end
-	
+
 	if keydown and ent:GetIsCruiseModeOn() then
 		ent:SetIsCruiseModeOn( false )
 	end
@@ -227,18 +227,6 @@ numpad.Register( "k_eng", function( pl, ent, keydown )
 		end
 	end
 end)
-
-numpad.Register( "k_lock", function( pl, ent, keydown )
-	if not IsValid(pl) or not IsValid(ent) then return false end
-	
-	if keydown then
-		if ent:GetIsVehicleLocked() then
-			ent:UnLock()
-		else
-			ent:Lock()
-		end
-	end
-end )
 
 numpad.Register( "k_flgts", function( pl, ent, keydown )
 	if not IsValid(pl) or not IsValid(ent) or not ent.LightsTable then return false end
