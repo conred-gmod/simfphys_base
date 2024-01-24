@@ -160,19 +160,12 @@ function ENT:InitializeVehicle()
 
 	local View = self:SetupView()
 	
-	self.DriverSeat = ents.Create( "prop_vehicle_prisoner_pod" )
+	self.DriverSeat = self:AddDriverSeat( self:WorldToLocal( View.ViewPos ), self:WorldToLocalAngles( View.ViewAng ) )
+	self.DriverSeat:SetParent( NULL )
 	self.DriverSeat:SetMoveType( MOVETYPE_NONE )
-
-	self.DriverSeat:SetModel( "models/nova/airboat_seat.mdl" )
-	self.DriverSeat:SetKeyValue( "vehiclescript","scripts/vehicles/prisoner_pod.txt" )
-	self.DriverSeat:SetKeyValue( "limitview", self.LimitView and 1 or 0 )
-	self.DriverSeat:SetPos( View.ViewPos )
-	self.DriverSeat:SetAngles( View.ViewAng )
-	self.DriverSeat:SetOwner( self )
 	self.DriverSeat:Spawn()
 	self.DriverSeat:Activate()
 	self.DriverSeat:SetPos( View.ViewPos + self.DriverSeat:GetUp() * (-34 + self.SeatOffset.z) + self.DriverSeat:GetRight() * (self.SeatOffset.y) + self.DriverSeat:GetForward() * (-6 + self.SeatOffset.x) )
-	self.DriverSeat:SetNWInt( "pPodIndex", 1 )
 	
 	if View.ID ~= false then
 		self:SetupEnteringAnims()
@@ -181,57 +174,14 @@ function ENT:InitializeVehicle()
 		self.DriverSeat:SetParent( self )
 	end
 
-	self.DriverSeat:GetPhysicsObject():EnableDrag( false ) 
-	self.DriverSeat:GetPhysicsObject():EnableMotion( false )
-	self.DriverSeat:GetPhysicsObject():SetMass( 1 )
-
 	self.DriverSeat.fphysSeat = true
 	self.DriverSeat.base = self
-	self.DriverSeat.DoNotDuplicate = true
-	self:DeleteOnRemove( self.DriverSeat )
-	self:SetDriverSeat( self.DriverSeat )
-	self.DriverSeat:SetNotSolid( true )
-	--self.DriverSeat:SetNoDraw( true )
-	self.DriverSeat:SetColor( Color( 255, 255, 255, 0 ) ) 
-	self.DriverSeat:SetRenderMode( RENDERMODE_TRANSALPHA )
-	self.DriverSeat:DrawShadow( false )
-
-	simfphys.SetOwner( self.EntityOwner, self.DriverSeat )
 
 	if self.PassengerSeats then
 		for i = 1, table.Count( self.PassengerSeats ) do
-			self.pSeat[i] = ents.Create( "prop_vehicle_prisoner_pod" )
-			self.pSeat[i]:SetModel( "models/nova/airboat_seat.mdl" )
-			self.pSeat[i]:SetKeyValue( "vehiclescript","scripts/vehicles/prisoner_pod.txt" )
-			self.pSeat[i]:SetKeyValue( "limitview", 0)
-			self.pSeat[i]:SetPos( self:LocalToWorld( self.PassengerSeats[i].pos ) )
-			self.pSeat[i]:SetAngles( self:LocalToWorldAngles( self.PassengerSeats[i].ang ) )
-			self.pSeat[i]:SetOwner( self )
-			self.pSeat[i]:Spawn()
-			self.pSeat[i]:Activate()
-			self.pSeat[i]:SetNotSolid( true )
-			--self.pSeat[i]:SetNoDraw( true )
-			self.pSeat[i]:SetColor( Color( 255, 255, 255, 0 ) ) 
-			self.pSeat[i]:SetRenderMode( RENDERMODE_TRANSALPHA )
-			
+			self.pSeat[i] = self:AddPassengerSeat( self.PassengerSeats[i].pos, self.PassengerSeats[i].ang )
 			self.pSeat[i].fphysSeat = true
 			self.pSeat[i].base = self
-			self.pSeat[i].DoNotDuplicate = true
-			simfphys.SetOwner( self.EntityOwner, self.pSeat[i] )
-			
-			self.pSeat[i]:DrawShadow( false )
-
-			self.pSeat[i]:GetPhysicsObject():EnableMotion( false )
-			self.pSeat[i]:GetPhysicsObject():EnableDrag(false) 
-			self.pSeat[i]:GetPhysicsObject():SetMass(1)
-	
-			self:DeleteOnRemove( self.pSeat[i] )
-			
-			self.pSeat[i]:SetParent( self )
-			
-			self.pPodKeyIndex = self.pPodKeyIndex and self.pPodKeyIndex + 1 or 2
-	
-			self.pSeat[i]:SetNWInt( "pPodIndex", self.pPodKeyIndex )
 		end
 	end
 
