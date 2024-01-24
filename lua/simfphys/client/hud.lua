@@ -1,6 +1,6 @@
-if not file.Exists( "lvs_framework/autorun/cl_circles.lua", "LUA" ) then return end
+if not file.Exists( "includes/circles/circles.lua", "LUA" ) then return end
 
-local circles = include("lvs_framework/autorun/cl_circles.lua")
+local circles = include("includes/circles/circles.lua")
 
 local CircleMain
 local CircleMainRed
