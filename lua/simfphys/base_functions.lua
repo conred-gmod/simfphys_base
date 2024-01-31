@@ -11,9 +11,6 @@ simfphys.pDamageEnabled = false
 simfphys.Fuel = true
 simfphys.FuelMul = 0.1
 
-simfphys.VERSION = 494
-simfphys.VERSION_GITHUB = 0
-
 cvars.AddChangeCallback( "sv_simfphys_enabledamage", function( convar, oldValue, newValue ) simfphys.DamageEnabled = ( tonumber( newValue )~=0 ) end)
 cvars.AddChangeCallback( "sv_simfphys_damagemultiplicator", function( convar, oldValue, newValue ) simfphys.DamageMul = tonumber( newValue ) end)
 cvars.AddChangeCallback( "sv_simfphys_playerdamage", function( convar, oldValue, newValue ) simfphys.pDamageEnabled = ( tonumber( newValue )~=0 ) end)
@@ -39,43 +36,6 @@ simfphys.glass = CreateConVar( "sv_simfphys_traction_glass", "1", {FCVAR_REPLICA
 simfphys.gravel = CreateConVar( "sv_simfphys_traction_gravel", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE})
 simfphys.rock = CreateConVar( "sv_simfphys_traction_rock", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE})
 simfphys.wood = CreateConVar( "sv_simfphys_traction_wood", "1", {FCVAR_REPLICATED , FCVAR_ARCHIVE})
-
-function simfphys:GetVersion()
-	return simfphys.VERSION
-end
-
-function simfphys:CheckUpdates()
-	http.Fetch("https://raw.githubusercontent.com/Blu-x92/simfphys_base/master/lua/simfphys/base_functions.lua", function(contents,size) 
-		local Entry = string.match( contents, "simfphys.VERSION%s=%s%d+" )
-
-		if Entry then
-			simfphys.VERSION_GITHUB = tonumber( string.match( Entry , "%d+" ) ) or 0
-		end
-
-		if simfphys.VERSION_GITHUB == 0 then
-			print("[simfphys] latest version could not be detected, You have Version: "..simfphys:GetVersion())
-		else
-			if simfphys:GetVersion() >= simfphys.VERSION_GITHUB then
-				print("[simfphys] is up to date, Version: "..simfphys:GetVersion())
-			else
-				print("[simfphys] a newer version is available! Version: "..simfphys.VERSION_GITHUB..", You have Version: "..simfphys:GetVersion())
-				print("[simfphys] get the latest version at https://github.com/Blu-x92/simfphys_base")
-
-				if CLIENT then 
-					timer.Simple(18, function() 
-						chat.AddText( Color( 255, 0, 0 ), "[simfphys] a newer version is available!" )
-					end)
-				end
-			end
-		end
-	end)
-end
-
-hook.Add( "InitPostEntity", "!!!simfphyscheckupdates", function()
-	timer.Simple(20, function()
-		simfphys.CheckUpdates()
-	end)
-end )
 
 function simfphys.IsCar( ent )
 	if not IsValid( ent ) then return false end
