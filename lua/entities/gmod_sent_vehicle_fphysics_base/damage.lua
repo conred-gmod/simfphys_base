@@ -104,10 +104,10 @@ function ENT:OnTakeDamage( dmginfo )
 			net.WriteBool( false ) 
 		net.Broadcast()
 
-		if Type == DMG_AIRBOAT then
-			Type = DMG_DIRECT
-			Damage = Damage * 6
-		end
+		-- if Type == DMG_AIRBOAT then
+		-- 	Type = DMG_DIRECT
+		-- 	Damage = Damage * 6
+		-- end
 
 		local oldHP = self:GetCurHealth()
 
