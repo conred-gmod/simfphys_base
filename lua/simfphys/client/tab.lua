@@ -448,7 +448,7 @@ end
 
 hook.Add( "LVS.PopulateVehicles", "!!!add_simfphys_vehicles",  function( node, pnlContent, _ )
 
-	local tree = node:AddNode( "Cars [Fake Physics]", "icon16/simfphys.png" )
+	local tree = node:AddNode( "simfphys", "icon16/simfphys.png" )
 
 	local Categorised = {}
 

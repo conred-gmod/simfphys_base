@@ -18,9 +18,6 @@ if SERVER then
 	include("simfphys/server/spawner.lua")
 	include("simfphys/server/poseparameter.lua")
 	include("simfphys/server/joystick.lua")
-
-	resource.AddWorkshop("771487490")
-
 else
 	killicon.Add( "gmod_sent_vehicle_fphysics_base", "HUD/killicons/simfphys_car", Color( 255, 80, 0, 255 ) )
 
