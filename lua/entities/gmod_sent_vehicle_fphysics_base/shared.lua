@@ -25,6 +25,8 @@ ENT.MouseSteerExponent = 2
 
 ENT.lvsDisableZoom = false
 
+ENT.DoNotDuplicate = true
+
 function ENT:SetupDataTables()
 
 	self:AddDT( "Int", "AITEAM", { KeyName = "aiteam", Edit = { type = "Int", order = 0,min = 0, max = 3, category = "AI"} } )
