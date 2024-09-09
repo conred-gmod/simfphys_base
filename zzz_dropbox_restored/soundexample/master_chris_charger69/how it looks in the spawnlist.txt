@@ -1,0 +1,13 @@
+EngineSoundPreset = -1,
+
+snd_pitch = 0.95,
+snd_idle = "simulated_vehicles/master_chris_charger69/charger_idle.wav",
+
+snd_low = "simulated_vehicles/master_chris_charger69/charger_low.wav",
+snd_low_revdown = "simulated_vehicles/master_chris_charger69/charger_revdown.wav",
+snd_low_pitch = 0.9,
+
+snd_mid = "simulated_vehicles/master_chris_charger69/charger_mid.wav",
+snd_mid_gearup = "simulated_vehicles/master_chris_charger69/charger_second.wav",
+snd_mid_geardown = "simulated_vehicles/master_chris_charger69/charger_shiftdown.wav",
+snd_mid_pitch = 1.15,
