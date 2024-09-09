@@ -447,19 +447,23 @@ if SERVER then
 
 	function ENT:OnTakeDamage( dmginfo )
 		self:TakePhysicsDamage( dmginfo )
-		
+	
 		if self:GetDamaged() or not simfphys.DamageEnabled then return end
-		
+	
 		local Damage = dmginfo:GetDamage() 
 		local DamagePos = dmginfo:GetDamagePosition() 
 		local Type = dmginfo:GetDamageType()
 		local BaseEnt = self:GetBaseEnt()
-		
+	
 		if TYPE == DMG_BLAST then return end  -- no tirepopping on explosions
-		
+
 		if IsValid(BaseEnt) then
-			if BaseEnt:GetBulletProofTires() then return end
-			
+			if BaseEnt:GetBulletProofTires() then
+				BaseEnt:OnTakeDamage( dmginfo )
+
+				return
+			end
+
 			if Damage > 1 then
 				if not self.PreBreak then
 					self.PreBreak = CreateSound(self, "ambient/gas/cannister_loop.wav")

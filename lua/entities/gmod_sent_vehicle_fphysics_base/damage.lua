@@ -84,8 +84,15 @@ end
 function ENT:ExplodeVehicle()
 	if not IsValid( self ) then return end
 	if self.destroyed then return end
-	
+
 	self.destroyed = true
+
+	local Attacker = self.LastAttacker
+
+	if IsValid( Attacker ) and Attacker:IsPlayer() and LVS then
+		net.Start( "lvs_killmarker" )
+		net.Send( Attacker )
+	end
 
 	local ply = self.EntityOwner
 	local skin = self:GetSkin()
@@ -237,25 +244,46 @@ end
 
 function ENT:OnTakeDamage( dmginfo )
 	if not self:IsInitialized() then return end
-	
+
 	if hook.Run( "simfphysOnTakeDamage", self, dmginfo ) then return end
-	
+
 	local Damage = dmginfo:GetDamage() 
 	local DamagePos = dmginfo:GetDamagePosition() 
 	local Type = dmginfo:GetDamageType()
 	local Driver = self:GetDriver()
-	
+
 	self.LastAttacker = dmginfo:GetAttacker() 
 	self.LastInflictor = dmginfo:GetInflictor()
-	
+
 	if simfphys.DamageEnabled then
 		net.Start( "simfphys_spritedamage" )
 			net.WriteEntity( self )
 			net.WriteVector( self:WorldToLocal( DamagePos ) ) 
 			net.WriteBool( false ) 
 		net.Broadcast()
-		
+
+		if LVS and Type == DMG_AIRBOAT then
+			Type = DMG_DIRECT
+			Damage = Damage * 5
+		end
+
+		local oldHP = self:GetCurHealth()
+
 		self:ApplyDamage( Damage, Type )
+
+		local newHP = self:GetCurHealth()
+
+		if not LVS then return end
+
+		if oldHP ~= newHP then
+			local IsFireDamage = dmginfo:IsDamageType( DMG_BURN )
+
+			if IsValid( self.LastAttacker ) and self.LastAttacker:IsPlayer() and not IsFireDamage then
+				net.Start( "lvs_hitmarker" )
+					net.WriteBool( CriticalHit )
+				net.Send( self.LastAttacker )
+			end
+		end
 	end
 end
 
