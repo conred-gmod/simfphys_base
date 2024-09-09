@@ -1,0 +1,3 @@
+name=simfphys
+version=499
+url=https://raw.githubusercontent.com/SpaxscE/simfphys_base/master/data_static/lvs/771487490.txt
