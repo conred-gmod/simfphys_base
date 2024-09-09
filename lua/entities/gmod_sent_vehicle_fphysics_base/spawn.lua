@@ -145,27 +145,30 @@ function ENT:InitializeVehicle()
 	if self.Inertia then
 		physObj:SetInertia( self.Inertia ) 
 	end
-
+	
 	local tanksize = self.FuelTankSize and self.FuelTankSize or 65
 	local fueltype = self.FuelType and self.FuelType or FUELTYPE_PETROL
-
+	
 	self:SetMaxFuel( tanksize )
 	self:SetFuel( self:GetMaxFuel() )
 	self:SetFuelType( fueltype )
 	self:SetFuelPos( self.FuelFillPos and self.FuelFillPos or Vector(0,0,0) )
-
-	if fueltype ~= FUELTYPE_NONE then
-		self:AddFuelTank()
-	end
-
+	
 	local View = self:SetupView()
 	
-	self.DriverSeat = self:AddDriverSeat( self:WorldToLocal( View.ViewPos ), self:WorldToLocalAngles( View.ViewAng ) )
-	self.DriverSeat:SetParent( NULL )
+	self.DriverSeat = ents.Create( "prop_vehicle_prisoner_pod" )
 	self.DriverSeat:SetMoveType( MOVETYPE_NONE )
+	
+	self.DriverSeat:SetModel( "models/nova/airboat_seat.mdl" )
+	self.DriverSeat:SetKeyValue( "vehiclescript","scripts/vehicles/prisoner_pod.txt" )
+	self.DriverSeat:SetKeyValue( "limitview", self.LimitView and 1 or 0 )
+	self.DriverSeat:SetPos( View.ViewPos )
+	self.DriverSeat:SetAngles( View.ViewAng )
+	self.DriverSeat:SetOwner( self )
 	self.DriverSeat:Spawn()
 	self.DriverSeat:Activate()
 	self.DriverSeat:SetPos( View.ViewPos + self.DriverSeat:GetUp() * (-34 + self.SeatOffset.z) + self.DriverSeat:GetRight() * (self.SeatOffset.y) + self.DriverSeat:GetForward() * (-6 + self.SeatOffset.x) )
+	self.DriverSeat:SetNWInt( "pPodIndex", 1 )
 	
 	if View.ID ~= false then
 		self:SetupEnteringAnims()
@@ -174,14 +177,57 @@ function ENT:InitializeVehicle()
 		self.DriverSeat:SetParent( self )
 	end
 
+	self.DriverSeat:GetPhysicsObject():EnableDrag( false ) 
+	self.DriverSeat:GetPhysicsObject():EnableMotion( false )
+	self.DriverSeat:GetPhysicsObject():SetMass( 1 )
+
 	self.DriverSeat.fphysSeat = true
 	self.DriverSeat.base = self
+	self.DriverSeat.DoNotDuplicate = true
+	self:DeleteOnRemove( self.DriverSeat )
+	self:SetDriverSeat( self.DriverSeat )
+	self.DriverSeat:SetNotSolid( true )
+	--self.DriverSeat:SetNoDraw( true )
+	self.DriverSeat:SetColor( Color( 255, 255, 255, 0 ) ) 
+	self.DriverSeat:SetRenderMode( RENDERMODE_TRANSALPHA )
+	self.DriverSeat:DrawShadow( false )
 
+	simfphys.SetOwner( self.EntityOwner, self.DriverSeat )
+	
 	if self.PassengerSeats then
 		for i = 1, table.Count( self.PassengerSeats ) do
-			self.pSeat[i] = self:AddPassengerSeat( self.PassengerSeats[i].pos, self.PassengerSeats[i].ang )
+			self.pSeat[i] = ents.Create( "prop_vehicle_prisoner_pod" )
+			self.pSeat[i]:SetModel( "models/nova/airboat_seat.mdl" )
+			self.pSeat[i]:SetKeyValue( "vehiclescript","scripts/vehicles/prisoner_pod.txt" )
+			self.pSeat[i]:SetKeyValue( "limitview", 0)
+			self.pSeat[i]:SetPos( self:LocalToWorld( self.PassengerSeats[i].pos ) )
+			self.pSeat[i]:SetAngles( self:LocalToWorldAngles( self.PassengerSeats[i].ang ) )
+			self.pSeat[i]:SetOwner( self )
+			self.pSeat[i]:Spawn()
+			self.pSeat[i]:Activate()
+			self.pSeat[i]:SetNotSolid( true )
+			--self.pSeat[i]:SetNoDraw( true )
+			self.pSeat[i]:SetColor( Color( 255, 255, 255, 0 ) ) 
+			self.pSeat[i]:SetRenderMode( RENDERMODE_TRANSALPHA )
+			
 			self.pSeat[i].fphysSeat = true
 			self.pSeat[i].base = self
+			self.pSeat[i].DoNotDuplicate = true
+			simfphys.SetOwner( self.EntityOwner, self.pSeat[i] )
+			
+			self.pSeat[i]:DrawShadow( false )
+
+			self.pSeat[i]:GetPhysicsObject():EnableMotion( false )
+			self.pSeat[i]:GetPhysicsObject():EnableDrag(false) 
+			self.pSeat[i]:GetPhysicsObject():SetMass(1)
+	
+			self:DeleteOnRemove( self.pSeat[i] )
+			
+			self.pSeat[i]:SetParent( self )
+			
+			self.pPodKeyIndex = self.pPodKeyIndex and self.pPodKeyIndex + 1 or 2
+	
+			self.pSeat[i]:SetNWInt( "pPodIndex", self.pPodKeyIndex )
 		end
 	end
 
@@ -194,7 +240,7 @@ function ENT:InitializeVehicle()
 
 	if self.Attachments then
 		for i = 1, table.Count( self.Attachments ) do
-			local prop = ents.Create( "gmod_sent_vehicle_fphysics_attachment" )
+			local prop = ents.Create( ((self.Attachments[i].IsGlass == true) and "gmod_sent_vehicle_fphysics_attachment_translucent" or "gmod_sent_vehicle_fphysics_attachment") )
 			prop:SetModel( self.Attachments[i].model )			
 			prop:SetMaterial( self.Attachments[i].material )
 			prop:SetRenderMode( RENDERMODE_TRANSALPHA )
@@ -273,7 +319,8 @@ function ENT:SetValues()
 	end
 	
 	self:SetGear( 2 )
-
+	
+	self.EnableSuspension = 0
 	self.WheelOnGroundDelay = 0
 	self.SmoothAng = 0
 	self.Steer = 0
@@ -378,12 +425,10 @@ function ENT:WriteVehicleDataTable()
 		self.BlowerWhine = CreateSound(self, "")
 		self.BlowOff = CreateSound(self, "")
 
-		local Health = math.floor(self.MaxHealth ~= -1 and self.MaxHealth or (1000 + self:GetPhysicsObject():GetMass() / 3))
+		local Health = math.floor(self.MaxHealth and self.MaxHealth or (1000 + self:GetPhysicsObject():GetMass() / 3))
 		self:SetMaxHealth( Health )
 		self:SetCurHealth( Health )
-
-		self:SetAITEAM( self.AITEAM )
-
+		
 		self:SetFastSteerAngle(self.FastSteeringAngle / self.VehicleData["steerangle"])
 		self:SetNotSolid( false )
 		self:SetupVehicle()
@@ -549,19 +594,13 @@ function ENT:SetupVehicle()
 			end
 		end )
 	end )
-
-	if istable( self.GibModels ) then
-		for _, modelName in ipairs( self.GibModels ) do
-			util.PrecacheModel( modelName )
-		end
-	end
-
+	
+	self.VehicleData["filter"] = table.Copy( self.Wheels )
+	table.insert( self.VehicleData["filter"], self )
+	
+	self.EnableSuspension = 1
 	self:OnSpawn()
 	hook.Run( "simfphysOnSpawn", self )
-
-	self:SetlvsReady( true )
-
-	self.VehicleData["filter"] = self:GetCrosshairFilterEnts()
 end
 
 function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , poseposition, suspensiontravel, constant, damping, rdamping)
@@ -583,7 +622,7 @@ function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , po
 	if self.RearWheelMass and (index == 3 or index == 4 or index == 5 or index == 6) then
 		WheelMass = self.RearWheelMass
 	end
-
+	
 	self.name = ents.Create( "gmod_sent_vehicle_fphysics_wheel" )
 	self.name:SetPos( attachmentpos - Up * height)
 	self.name:SetAngles( fAng )
@@ -598,8 +637,7 @@ function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , po
 	self.name.EntityOwner = self.EntityOwner
 	self.name.Index = index
 	self.name.Radius = radius
-	self.name:SetRadius( radius )
-
+	
 	if self.CustomWheels then
 		local Model = (self.CustomWheelModel_R and (index == 3 or index == 4 or index == 5 or index == 6)) and self.CustomWheelModel_R or self.CustomWheelModel
 		local ghostAng = Right:Angle()

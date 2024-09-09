@@ -18,9 +18,19 @@ if CLIENT then
 		render.ModelMaterialOverride()
 		render.SetBlend(1)
 	end
+	net.Receive("simfphys_explosion_fx", function(length)
+		local self = net.ReadEntity()
+		if IsValid( self ) then
+			local effectdata = EffectData()
+				effectdata:SetOrigin( self:GetPos() )
+			util.Effect( "simfphys_explosion", effectdata )
+		end
+	end)
 end
 
 if SERVER then
+	util.AddNetworkString( "simfphys_explosion_fx" )
+	
 	function ENT:Initialize()
 		self:PhysicsInit( SOLID_VPHYSICS )
 		self:SetMoveType( MOVETYPE_VPHYSICS )
@@ -32,32 +42,78 @@ if SERVER then
 			self:Remove()
 			return
 		end
-
-		local PhysObj = self:GetPhysicsObject()
-
-		PhysObj:EnableMotion(true)
-		PhysObj:Wake()
-
+		
+		self:GetPhysicsObject():EnableMotion(true)
+		self:GetPhysicsObject():Wake()
 		self:SetCollisionGroup( COLLISION_GROUP_DEBRIS ) 
 		self:SetRenderMode( RENDERMODE_TRANSALPHA )
 		
-		local fxPos = self:LocalToWorld( self:OBBCenter() )
-
+		
 		timer.Simple( 0.05, function()
 			if not IsValid( self ) then return end
 			if self.MakeSound == true then
-				self:Ignite( 30 )
+				net.Start( "simfphys_explosion_fx" )
+					net.WriteEntity( self )
+				net.Broadcast()
+				
+				util.ScreenShake( self:GetPos(), 50, 50, 1.5, 700 )
+				util.BlastDamage( self, Entity(0), self:GetPos(), 300,200 )
+				
+				local Light = ents.Create( "light_dynamic" )
+				Light:SetPos( self:GetPos() + Vector( 0, 0, 10 ) )
+				local Lightpos = Light:GetPos() + Vector( 0, 0, 10 )
+				Light:SetPos( Lightpos )
+				Light:SetKeyValue( "_light", "220 40 0 255" )
+				Light:SetKeyValue( "style", 1)
+				Light:SetKeyValue( "distance", 255 )
+				Light:SetKeyValue( "brightness", 2 )
+				Light:SetParent( self )
+				Light:Spawn()
+				Light:Fire( "TurnOn", "", "0" )
+				
+				timer.Simple( 0.7, function()
+					if not IsValid( self ) then return end
+					
+					self.particleeffect = ents.Create( "info_particle_system" )
+					self.particleeffect:SetKeyValue( "effect_name" , "fire_large_01")
+					self.particleeffect:SetKeyValue( "start_active" , 1)
+					self.particleeffect:SetOwner( self )
+					self.particleeffect:SetPos( self:LocalToWorld( self:GetPhysicsObject():GetMassCenter() + Vector(0,0,15) ) )
+					self.particleeffect:SetAngles( self:GetAngles() )
+					self.particleeffect:Spawn()
+					self.particleeffect:Activate()
+					self.particleeffect:SetParent( self )
+					
+					self.FireSound = CreateSound(self, "ambient/fire/firebig.wav")
+					self.FireSound:Play()
+				end)
+				
+				timer.Simple( 120, function()
+					if not IsValid( self ) then return end
+					
+					if IsValid( Light ) then
+						Light:Remove()
+					end
+					
+					if IsValid( self.particleeffect ) then
+						self.particleeffect:Remove()
+					end
+					
+					if self.FireSound then
+						self.FireSound:Stop()
+					end
+				end)
 			else
-				local GibDir = Vector( math.Rand(-1,1), math.Rand(-1,1), 1.5 ):GetNormalized()
-				PhysObj:SetVelocityInstantaneous( GibDir * math.random(800,1300)  )
-
-				local effectdata = EffectData()
-					effectdata:SetOrigin( fxPos )
-					effectdata:SetStart( PhysObj:GetMassCenter() )
-					effectdata:SetEntity( self )
-					effectdata:SetScale( math.Rand(0.3,0.7) )
-					effectdata:SetMagnitude( math.Rand(0.5,2.5) )
-				util.Effect( "lvs_firetrail", effectdata )
+				self.particleeffect = ents.Create( "info_particle_system" )
+				self.particleeffect:SetKeyValue( "effect_name" , "fire_small_03")
+				self.particleeffect:SetKeyValue( "start_active" , 1)
+				self.particleeffect:SetOwner( self )
+				self.particleeffect:SetPos( self:LocalToWorld( self:GetPhysicsObject():GetMassCenter() ) )
+				self.particleeffect:SetAngles( self:GetAngles() )
+				self.particleeffect:Spawn()
+				self.particleeffect:Activate()
+				self.particleeffect:SetParent( self )
+				self.particleeffect:Fire( "Stop", "", math.random(0.5,3) )
 			end
 			
 		end)

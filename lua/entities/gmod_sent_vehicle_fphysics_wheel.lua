@@ -4,41 +4,20 @@ ENT.Type            = "anim"
 
 ENT.Spawnable       = false
 ENT.AdminSpawnable  = false
-
 ENT.DoNotDuplicate = true
 
-ENT.RenderGroup = RENDERGROUP_BOTH 
-
 function ENT:SetupDataTables()
-	self:NetworkVar( "Float", 0, "Radius")
 	self:NetworkVar( "Float", 1, "OnGround" )
-	self:NetworkVar( "Float", 2, "RPM" )
-	self:NetworkVar( "Float", 3, "GripLoss" )
-	self:NetworkVar( "Float", 4, "Speed" )
-	self:NetworkVar( "Float", 5, "SkidSound" )
 	self:NetworkVar( "String", 2, "SurfaceMaterial" )
+	self:NetworkVar( "Float", 3, "Speed" )
+	self:NetworkVar( "Float", 4, "SkidSound" )
+	self:NetworkVar( "Float", 5, "GripLoss" )
 	self:NetworkVar( "Bool", 1, "Damaged" )
 	self:NetworkVar( "Entity", 1, "BaseEnt" )
-
+	
 	if SERVER then
 		self:NetworkVarNotify( "Damaged", self.OnDamaged )
 	end
-end
-
-function ENT:GetWidth()
-	return 3
-end
-
-function ENT:VelToRPM( speed )
-	if not speed then return 0 end
-
-	return speed * 60 / math.pi / (self:GetRadius() * 2)
-end
-
-function ENT:RPMToVel( rpm )
-	if not rpm then return 0 end
-
-	return (math.pi * rpm * self:GetRadius() * 2) / 60
 end
 
 if SERVER then
@@ -58,21 +37,74 @@ if SERVER then
 		self.OldMaterial2 = ""
 		self.OldVar = 0
 		self.OldVar2 = 0
-	
+		
 		local Color = self:GetColor()
 		local dot = Color.r * Color.g * Color.b * Color.a
 		self.OldColor = dot
+		
+		timer.Simple( 0.01, function()
+			if not IsValid( self ) then return end
+			
+			self.WheelDust = ents.Create( "info_particle_system" )
+			self.WheelDust:SetKeyValue( "effect_name" , "WheelDust")
+			self.WheelDust:SetKeyValue( "start_active" , 0)
+			self.WheelDust:SetOwner( self )
+			self.WheelDust:SetPos( self:GetPos() + Vector(0,0,-self:BoundingRadius() * 0.4) )
+			self.WheelDust:SetAngles( self:GetAngles() )
+			self.WheelDust:Spawn()
+			self.WheelDust:Activate()
+			self.WheelDust:SetParent( self )
+			self.WheelDust.DoNotDuplicate = true
+
+			simfphys.SetOwner( self.EntityOwner, self.WheelDust )
+
+			if not istable( StormFox ) and not istable( StormFox2 ) then return end
+
+			self.WheelSplash = ents.Create( "info_particle_system" )
+			self.WheelSplash:SetKeyValue( "effect_name" , "WheelSplashForward")
+			self.WheelSplash:SetKeyValue( "start_active" , 0)
+			self.WheelSplash:SetOwner( self )
+			self.WheelSplash:SetPos( self:GetPos() + Vector(0,0,-self:BoundingRadius() - 5) )
+			self.WheelSplash:SetAngles( self:GetAngles() )
+			self.WheelSplash:Spawn()
+			self.WheelSplash:Activate()
+			self.WheelSplash:SetParent( self )
+			self.WheelSplash.DoNotDuplicate = true
+
+			simfphys.SetOwner( self.EntityOwner, self.WheelSplash )
+		end)
+		
+		self.snd_roll = "simulated_vehicles/sfx/concrete_roll.wav"
+		self.snd_roll_dirt = "simulated_vehicles/sfx/dirt_roll.wav"
+		self.snd_roll_grass = "simulated_vehicles/sfx/grass_roll.wav"
+		
+		self.snd_skid = "simulated_vehicles/sfx/concrete_skid.wav"
+		self.snd_skid_dirt = "simulated_vehicles/sfx/dirt_skid.wav"
+		self.snd_skid_grass = "simulated_vehicles/sfx/grass_skid.wav"
+		
+		self.RollSound = CreateSound(self, self.snd_roll)
+		self.RollSound_Dirt = CreateSound(self, self.snd_roll_dirt)
+		self.RollSound_Grass = CreateSound(self, self.snd_roll_grass)
+		
+		self.Skid = CreateSound(self, self.snd_skid)
+		self.Skid_Dirt = CreateSound(self, self.snd_skid_dirt)
+		self.Skid_Grass = CreateSound(self, self.snd_skid_grass)
 	end
 	
 	function ENT:Use( ply )
 		local base = self:GetBaseEnt()
-
 		if not IsValid( base ) then return end
 
-		base:Use( ply )
+		if base:GetIsVehicleLocked() or base:HasPassengerEnemyTeam( ply ) then 
+			base:EmitSound( "doors/default_locked.wav" )
+
+			return
+		end
+
+		base:SetPassenger( ply )
 	end
 
-	function ENT:Think()
+	function ENT:Think()	
 		if self.GhostEnt then
 			local Color = self:GetColor()
 			local dot = Color.r * Color.g * Color.b * Color.a
@@ -84,22 +116,319 @@ if SERVER then
 				self.OldColor = dot
 			end
 		end
-
+		
+		if self:GetDamaged() then
+			self:WheelFxBroken()
+		else
+			self:WheelFx()
+		end
+		
+		self:CheckWeather()
+		
 		self:NextThink( CurTime() + 0.15 )
-
 		return true
 	end
 
-	function ENT:FixTire()
-		self:SetDamaged( false )
+	function ENT:CheckWeather()
+		if not istable( StormFox ) and not istable( StormFox2 ) then return end
 
-		if not self.PreBreak then return end
+		if istable( StormFox ) then
+			if isfunction( StormFox.IsRaining ) then
+				if StormFox.IsRaining() then
+					self.RainDetected = true
+					self.snd_roll = "simulated_vehicles/sfx/concrete_roll_wet.wav"
+					self.snd_skid = "simulated_vehicles/sfx/concrete_skid_wet.wav"
+				else
+					self.RainDetected = false
+					self.snd_roll = "simulated_vehicles/sfx/concrete_roll.wav"
+					self.snd_skid = "simulated_vehicles/sfx/concrete_skid.wav"
+				end
+			end
+		else
+			if istable( StormFox2.Weather ) and isfunction( StormFox2.Weather.IsRaining ) then
+				if StormFox2.Weather:IsRaining() then
+					self.RainDetected = true
+					self.snd_roll = "simulated_vehicles/sfx/concrete_roll_wet.wav"
+					self.snd_skid = "simulated_vehicles/sfx/concrete_skid_wet.wav"
+				else
+					self.RainDetected = false
+					self.snd_roll = "simulated_vehicles/sfx/concrete_roll.wav"
+					self.snd_skid = "simulated_vehicles/sfx/concrete_skid.wav"
+				end
+			end
+		end
+	end
+	
+	function ENT:WheelFxBroken()
+		local ForwardSpeed = math.abs( self:GetSpeed() )
+		local SkidSound = math.Clamp( self:GetSkidSound(),0,255)
+		local Speed = self:GetVelocity():Length()
+		local WheelOnGround = self:GetOnGround()
+		local EnableDust = (Speed * WheelOnGround > 200)	
+		local Material = self:GetSurfaceMaterial()
+		local GripLoss = self:GetGripLoss()
+		
+		if EnableDust ~= self.OldVar then
+			self.OldVar = EnableDust
+			
+			if self.RainDetected then
+				if EnableDust then
+					if IsValid( self.WheelSplash ) then
+						self.WheelSplash:Fire( "Start" )
+					end
+				else
+					if IsValid( self.WheelSplash ) then
+						self.WheelSplash:Fire( "Stop" )
+					end
+				end
+			else
+				if IsValid( self.WheelSplash ) then
+					self.WheelSplash:Fire( "Stop" )
+				end
+			end
+			
+			if EnableDust then
+				if Material == "grass" then
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Start" )
+					end
+				elseif Material == "dirt" or Material == "sand" then
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Start" )
+					end
+				end
+			else
+				if IsValid( self.WheelDust ) then
+					self.WheelDust:Fire( "Stop" )
+				end
+			end
+		end
+		
+		if EnableDust then
+			if Material ~= self.OldMaterial then
+				if Material == "grass" then
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Start" )
+					end
+				elseif Material == "dirt" or Material == "sand" then
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Start" )
+					end
+				else
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Stop" )
+					end
+				end
+				self.OldMaterial = Material
+			end
+		end
+		
+		if self.RollSound_Broken then
+			local Volume = math.Clamp(SkidSound * 0.5 + ForwardSpeed / 1500,0,1) * WheelOnGround
+			local PlaySound = Volume > 0.1
+			
+			self.OldPlaySound = self.OldPlaySound or false
+			if PlaySound ~= self.OldPlaySound then
+				self.OldPlaySound = PlaySound
+				if PlaySound then
+					self.RollSound_Broken:PlayEx(0,0)
+				else
+					self.RollSound_Broken:Stop()
+				end
+			end
+			
+			
+			self.RollSound_Broken:ChangeVolume( Volume ) 
+			self.RollSound_Broken:ChangePitch(100 + math.Clamp((ForwardSpeed - 100) / 250 + (SkidSound * Speed / 800) + GripLoss * 22,0,155))
+		end
+	end
 
-		self.PreBreak:Stop()
-		self.PreBreak = nil
+	function ENT:WheelFx()
+		local ForwardSpeed = math.abs( self:GetSpeed() )
+		local SkidSound = math.Clamp( self:GetSkidSound(),0,255)
+		local Speed = self:GetVelocity():Length()
+		local WheelOnGround = self:GetOnGround()
+		local EnableDust = (Speed * WheelOnGround > 200)	
+		local Material = self:GetSurfaceMaterial()
+		local GripLoss = self:GetGripLoss()
+		
+		if EnableDust ~= self.OldVar then
+			self.OldVar = EnableDust
+			
+			if self.RainDetected then
+				if EnableDust then
+					if IsValid( self.WheelSplash ) then
+						self.WheelSplash:Fire( "Start" )
+					end
+				else
+					if IsValid( self.WheelSplash ) then
+						self.WheelSplash:Fire( "Stop" )
+					end
+				end
+			else
+				if IsValid( self.WheelSplash ) then
+					self.WheelSplash:Fire( "Stop" )
+				end
+			end
+		
+			if EnableDust then
+				if Material == "grass" then
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Start" )
+					end
+					self.RollSound_Grass = CreateSound(self, self.snd_roll_grass)
+					self.RollSound_Grass:PlayEx(0,0)
+					self.RollSound_Dirt:Stop()
+					self.RollSound:Stop()
+				elseif Material == "dirt" or Material == "sand" then
+					if IsValid( self.WheelDust ) then
+						self.WheelDust:Fire( "Start" )
+					end
+					self.RollSound_Dirt = CreateSound(self, self.snd_roll_dirt)
+					self.RollSound_Dirt:PlayEx(0,0)
+					self.RollSound_Grass:Stop()
+					self.RollSound:Stop()
+				else
+					self.RollSound_Grass:Stop()
+					self.RollSound_Dirt:Stop()
+					self.RollSound = CreateSound(self, self.snd_roll)
+					self.RollSound:PlayEx(0,0)
+				end
+			else
+				if IsValid( self.WheelDust )then
+					self.WheelDust:Fire( "Stop" )
+				end
+				self.RollSound:Stop()
+				self.RollSound_Grass:Stop()
+				self.RollSound_Dirt:Stop()
+			end
+		end
+		
+		if EnableDust then 
+			if Material ~= self.OldMaterial then
+				if Material == "grass" then
+					if IsValid(self.WheelDust) then
+						self.WheelDust:Fire( "Start" )
+					end
+					self.RollSound_Grass = CreateSound(self, self.snd_roll_grass)
+					self.RollSound_Grass:PlayEx(0,0)
+					self.RollSound_Dirt:Stop()
+					self.RollSound:Stop()
+					
+				elseif Material == "dirt" or Material == "sand" then
+					if IsValid(self.WheelDust) then
+						self.WheelDust:Fire( "Start" )
+					end
+					self.RollSound_Grass:Stop()
+					self.RollSound_Dirt = CreateSound(self, self.snd_roll_dirt)
+					self.RollSound_Dirt:PlayEx(0,0)
+					self.RollSound:Stop()
+				else
+					if IsValid(self.WheelDust) then
+						self.WheelDust:Fire( "Stop" )
+					end
+					self.RollSound_Grass:Stop()
+					self.RollSound_Dirt:Stop()
+					self.RollSound = CreateSound(self, self.snd_roll)
+					self.RollSound:PlayEx(0,0)
+				end
+				self.OldMaterial = Material
+			end
+			
+			if Material == "grass" then
+				self.RollSound_Grass:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1600,0,1), 0) 
+				self.RollSound_Grass:ChangePitch(80 + math.Clamp((ForwardSpeed - 100) / 250,0,255), 0) 
+			elseif Material == "dirt" or Material == "sand" then
+				self.RollSound_Dirt:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1600,0,1), 0) 
+				self.RollSound_Dirt:ChangePitch(80 + math.Clamp((ForwardSpeed - 100) / 250,0,255), 0) 
+			else
+				self.RollSound:ChangeVolume(math.Clamp((ForwardSpeed - 100) / 1500,0,1), 0) 
+				self.RollSound:ChangePitch(100 + math.Clamp((ForwardSpeed - 400) / 200,0,255), 0) 
+			end
+		end
+		
+		
+		if WheelOnGround ~= self.OldVar2 then
+			self.OldVar2 = WheelOnGround
+			if WheelOnGround == 1 then
+				if Material == "grass" or Material == "snow" then
+					self.Skid:Stop()
+					self.Skid_Grass = CreateSound(self, self.snd_skid_grass)
+					self.Skid_Grass:PlayEx(0,0)
+					self.Skid_Dirt:Stop()
+				elseif Material == "dirt" or Material == "sand" then
+					self.Skid_Grass:Stop()
+					self.Skid_Dirt = CreateSound(self, self.snd_skid_dirt)
+					self.Skid_Dirt:PlayEx(0,0)
+					self.Skid:Stop()
+				elseif Material == "ice" then
+					self.Skid_Grass:Stop()
+					self.Skid_Dirt:Stop()
+					self.Skid:Stop()
+				else
+					self.Skid = CreateSound(self, self.snd_skid)
+					self.Skid:PlayEx(0,0)
+					self.Skid_Grass:Stop()
+					self.Skid_Dirt:Stop()
+				end
+			else
+				self.Skid:Stop()
+				self.Skid_Grass:Stop()
+				self.Skid_Dirt:Stop()
+			end
+		end
+		
+		if WheelOnGround == 1 then 
+			if Material ~= self.OldMaterial2 then
+				if Material == "grass" or Material == "snow" then
+					self.Skid:Stop()
+					self.Skid_Grass = CreateSound(self, self.snd_skid_grass)
+					self.Skid_Grass:PlayEx(0,0)
+					self.Skid_Dirt:Stop()
+					
+				elseif Material == "dirt" or Material == "sand" then
+					self.Skid:Stop()
+					self.Skid_Grass:Stop()
+					self.Skid_Dirt = CreateSound(self, self.snd_skid_dirt)
+					self.Skid_Dirt:PlayEx(0,0)
+				elseif Material == "ice" then
+					self.Skid_Grass:Stop()
+					self.Skid_Dirt:Stop()
+					self.Skid:Stop()
+				else
+					self.Skid = CreateSound(self, self.snd_skid)
+					self.Skid:PlayEx(0,0)
+					self.Skid_Grass:Stop()
+					self.Skid_Dirt:Stop()
+				end
+				self.OldMaterial2 = Material
+			end
+			
+			if Material == "grass" or Material == "snow" then
+				self.Skid_Grass:ChangeVolume( math.Clamp(SkidSound,0,1) ) 
+				self.Skid_Grass:ChangePitch(math.min(90 + (SkidSound * Speed / 500),150)) 
+			elseif Material == "dirt" or Material == "sand" then
+				self.Skid_Dirt:ChangeVolume( math.Clamp(SkidSound,0,1) * 0.8) 
+				self.Skid_Dirt:ChangePitch(math.min(120 + (SkidSound * Speed / 500),150)) 
+			else
+				self.Skid:ChangeVolume( math.Clamp(SkidSound * 0.5,0,1) ) 
+				self.Skid:ChangePitch(math.min(85 + (SkidSound * Speed / 800) + GripLoss * 22,150)) 
+			end
+		end
 	end
 
 	function ENT:OnRemove()
+		self.RollSound_Grass:Stop()
+		self.RollSound_Dirt:Stop()
+		self.RollSound:Stop()
+		
+		self.Skid:Stop()
+		self.Skid_Grass:Stop()
+		self.Skid_Dirt:Stop()
+		
+		if self.RollSound_Broken then
+			self.RollSound_Broken:Stop()
+		end
 		if self.PreBreak then
 			self.PreBreak:Stop()
 		end
@@ -117,53 +446,67 @@ if SERVER then
 	end
 
 	function ENT:OnTakeDamage( dmginfo )
-		local BaseEnt = self:GetBaseEnt()
-
-		if IsValid( BaseEnt ) and dmginfo:IsDamageType( DMG_AIRBOAT + DMG_BULLET ) then
-			BaseEnt:OnTakeDamage( dmginfo )
-		end
-
+		self:TakePhysicsDamage( dmginfo )
+		
 		if self:GetDamaged() or not simfphys.DamageEnabled then return end
-
+		
 		local Damage = dmginfo:GetDamage() 
 		local DamagePos = dmginfo:GetDamagePosition() 
-
-		if not IsValid( BaseEnt ) or BaseEnt:GetBulletProofTires() or Damage <= 1 then return end
-
-		if not self.PreBreak then
-			self.PreBreak = CreateSound(self, "ambient/gas/cannister_loop.wav")
-			self.PreBreak:PlayEx(0.5,100)
-
-			timer.Simple(math.Rand(0.5,5), function() 
-				if IsValid(self) and not self:GetDamaged() then
+		local Type = dmginfo:GetDamageType()
+		local BaseEnt = self:GetBaseEnt()
+		
+		if TYPE == DMG_BLAST then return end  -- no tirepopping on explosions
+		
+		if IsValid(BaseEnt) then
+			if BaseEnt:GetBulletProofTires() then return end
+			
+			if Damage > 1 then
+				if not self.PreBreak then
+					self.PreBreak = CreateSound(self, "ambient/gas/cannister_loop.wav")
+					self.PreBreak:PlayEx(0.5,100)
+					
+					timer.Simple(math.Rand(0.5,5), function() 
+						if IsValid(self) and not self:GetDamaged() then
+							self:SetDamaged( true )
+							if self.PreBreak then
+								self.PreBreak:Stop()
+								self.PreBreak = nil
+							end
+						end
+					end)
+				else
 					self:SetDamaged( true )
-					if self.PreBreak then
-						self.PreBreak:Stop()
-						self.PreBreak = nil
-					end
+					self.PreBreak:Stop()
+					self.PreBreak = nil
 				end
-			end)
-		else
-			self:SetDamaged( true )
-			self.PreBreak:Stop()
-			self.PreBreak = nil
+			end
 		end
 	end
 
 	function ENT:OnDamaged( name, old, new)
 		if new == old then return end
-
+		
 		if new == true then
 			self.dRadius = self:BoundingRadius() * 0.28
-
+			
 			self:EmitSound( "simulated_vehicles/sfx/tire_break.ogg" )
-
-			if IsValid( self.GhostEnt ) then
+			
+			if IsValid(self.GhostEnt) then
 				self.GhostEnt:SetParent( nil )
 				self.GhostEnt:GetPhysicsObject():EnableMotion( false )
 				self.GhostEnt:SetPos( self:LocalToWorld( Vector(0,0,-self.dRadius) ) )
 				self.GhostEnt:SetParent( self )
 			end
+
+			self.Skid:Stop()
+			self.Skid_Grass:Stop()
+			self.Skid_Dirt:Stop()
+			
+			self.RollSound:Stop()
+			self.RollSound_Grass:Stop()
+			self.RollSound_Dirt:Stop()
+			
+			self.RollSound_Broken = CreateSound(self, "simulated_vehicles/sfx/tire_damaged.wav")
 		else
 			if IsValid( self.GhostEnt ) then
 				self.GhostEnt:SetParent( nil )
@@ -171,483 +514,116 @@ if SERVER then
 				self.GhostEnt:SetPos( self:LocalToWorld( Vector(0,0,0) ) )
 				self.GhostEnt:SetParent( self )
 			end
+			
+			if self.RollSound_Broken then
+				self.RollSound_Broken:Stop()
+			end
 		end
+		
+		local BaseEnt = self:GetBaseEnt()
+		if IsValid( BaseEnt ) then
+			BaseEnt:SetSuspension( self.Index , new )
+		end
+	end
+end
+
+if CLIENT then
+	function ENT:Initialize()	
+		self.FadeHeat = 0
+		
+		timer.Simple( 0.01, function()
+			if not IsValid( self ) then return end
+			self.Radius = self:BoundingRadius()
+		end)
+	end
+
+	function ENT:Think()
+		local curtime = CurTime()
+		self.SmokeTimer = self.SmokeTimer or 0
+		if self.SmokeTimer < curtime then
+			self:ManageSmoke()
+			self.SmokeTimer = curtime + 0.005
+		end
+		
+		self:NextThink( curtime )
+		return true
+	end
+
+	function ENT:ManageSmoke()
 
 		local BaseEnt = self:GetBaseEnt()
-
 		if not IsValid( BaseEnt ) then return end
 
-		BaseEnt:SetSuspension( self.Index , new )
-	end
-
-	return
-end
-
-ENT.SkidmarkTraceAdd = Vector(0,0,10)
-ENT.SkidmarkDelay = 0.05
-ENT.SkidmarkLifetime = 10
-
-ENT.SkidmarkRed = 0
-ENT.SkidmarkGreen = 0
-ENT.SkidmarkBlue = 0
-ENT.SkidmarkAlpha = 150
-
-ENT.SkidmarkSurfaces = {
-	["concrete"] = true,
-	["tile"] = true,
-	["metal"] = true,
-	["boulder"] = true,
-	["default"] = true,
-}
-
-ENT.DustEffectSurfaces = {
-	["sand"] = true,
-	["dirt"] = true,
-	["grass"] = true,
-	["antlionsand"] = true,
-}
-
-function ENT:Initialize()
-	self.FadeHeat = 0
-
-	timer.Simple( 0.01, function()
-		if not IsValid( self ) then return end
-		self.Radius = self:BoundingRadius()
-	end)
-end
-
-function ENT:Think()
-	self:ManageSmoke()
-
-	local T = CurTime()
-
-	if (self.fxTimer or 0) < T then
-		self:CalcWheelSlip()
-
-		self.fxTimer = T + 0.1
-	end
-
-	self:SetNextClientThink( CurTime() + 0.005 )
-
-	return true
-end
-
-function ENT:ManageSmoke()
-	local BaseEnt = self:GetBaseEnt()
-
-	if not IsValid( BaseEnt ) then return end
-
-	if LocalPlayer():GetPos():DistToSqr(self:GetPos()) > 6000 * 6000 or not BaseEnt:GetActive() then return end
-
-	local WheelOnGround = self:GetOnGround()
-	local GripLoss = self:GetGripLoss()
-	local Material = self:GetSurfaceMaterial()
-
-	if WheelOnGround > 0 and (Material == "concrete" or Material == "rock" or Material == "tile") and GripLoss > 0 then
-		self.FadeHeat = math.Clamp( self.FadeHeat + GripLoss * 0.06,0,10)
-	else
-		self.FadeHeat = self.FadeHeat * 0.995
-	end
-
-	local Scale = self.FadeHeat ^ 3 * 0.001
-	local SmokeOn = (self.FadeHeat >= 7)
-	local DirtOn = GripLoss > 0.05
-	local lcolor = BaseEnt:GetTireSmokeColor() * 255
-	local Speed = self:GetVelocity():Length()
-	local OnRim = self:GetDamaged()
-
-	local Forward = self:GetForward()
-	local Dir = (BaseEnt:GetGear() < 2) and Forward or -Forward
-
-	local WheelSize = self.Radius or 0
-	local Pos = self:GetPos()
-
-	if SmokeOn and not OnRim then
-		local effectdata = EffectData()
-			effectdata:SetOrigin( Pos )
-			effectdata:SetNormal( Dir )
-			effectdata:SetMagnitude( Scale ) 
-			effectdata:SetRadius( WheelSize ) 
-			effectdata:SetStart( Vector( lcolor.r, lcolor.g, lcolor.b ) )
-		util.Effect( "simfphys_tiresmoke", effectdata )
-	end
-
-	if WheelOnGround == 0 then return end
-
-	if (Speed > 150 or DirtOn) and OnRim then
-		self:MakeSparks( GripLoss, Dir, Pos, WheelSize )
-	end
-end
-
-function ENT:MakeSparks( Scale, Dir, Pos, WheelSize )
-	self.NextSpark = self.NextSpark or 0
-	
-	if self.NextSpark < CurTime() then
-	
-		self.NextSpark = CurTime() + 0.1
-		local effectdata = EffectData()
-			effectdata:SetOrigin( Pos - Vector(0,0,WheelSize * 0.5) )
-			effectdata:SetNormal( (Dir + Vector(0,0,0.5)) * Scale * 0.5)
-		util.Effect( "manhacksparks", effectdata, true, true )
-	end
-end
-
-function ENT:Draw()
-end
-
-function ENT:DrawTranslucent()
-	self:CalcWheelEffects()
-end
-
-function ENT:OnRemove()
-	self:StopWheelEffects()
-end
-
-function ENT:CalcWheelSlip()
-	local Base = self:GetBaseEnt()
-
-	if not IsValid( Base ) then return end
-
-	local Vel = self:GetVelocity()
-	local VelLength = Vel:Length()
-
-	local rpmTheoretical = self:VelToRPM( VelLength )
-	local rpm = math.abs( self:GetRPM() )
-
-	self._WheelSlip = math.max( rpm - rpmTheoretical - 250, 0 ) ^ 2 + math.max( math.abs( Base:VectorSplitNormal( self:GetRight(), Vel * 4 ) ) - VelLength, 0 )
-	self._WheelSkid = VelLength + self._WheelSlip
-end
-
-function ENT:GetSlip()
-	return (self._WheelSlip or 0)
-end
-
-function ENT:GetSkid()
-	return (self._WheelSkid or 0)
-end
-
-
-function ENT:StopWheelEffects()
-	if not self._DoingWheelFx then return end
-
-	self._DoingWheelFx = nil
-
-	self:FinishSkidmark()
-end
-
-function ENT:StartWheelEffects( Base, trace, traceWater )
-	self:DoWheelEffects( Base, trace, traceWater )
-
-	if self._DoingWheelFx then return end
-
-	self._DoingWheelFx = true
-end
-
-function ENT:DoWheelEffects( Base, trace, traceWater )
-	if not trace.Hit then self:FinishSkidmark() return end
-
-	local SurfacePropName = util.GetSurfacePropName( trace.SurfaceProps )
-	local SkidValue = self:GetSkid()
-
-	if traceWater.Hit then
-		local Scale = math.min( 0.3 + (SkidValue - 100) / 4000, 1 ) ^ 2
-
-		local effectdata = EffectData()
-		effectdata:SetOrigin( trace.HitPos )
-		effectdata:SetEntity( Base )
-		effectdata:SetNormal( trace.HitNormal )
-		effectdata:SetMagnitude( Scale )
-		effectdata:SetFlags( 1 )
-		util.Effect( "simfphys_physics_wheeldust", effectdata, true, true )
-
-		self:FinishSkidmark()
-
-		return
-	end
-
-	if self.SkidmarkSurfaces[ SurfacePropName ] then
-		local Scale = math.min( 0.3 + SkidValue / 4000, 1 ) ^ 2
-
-		if Scale > 0.2 then
-			self:StartSkidmark( trace.HitPos )
-			self:CalcSkidmark( trace, Base:GetCrosshairFilterEnts() )
+		if LocalPlayer():GetPos():DistToSqr(self:GetPos()) > 6000 * 6000 or not BaseEnt:GetActive() then return end
+		local WheelOnGround = self:GetOnGround()
+		local GripLoss = self:GetGripLoss()
+		local Material = self:GetSurfaceMaterial()
+		
+		if WheelOnGround > 0 and (Material == "concrete" or Material == "rock" or Material == "tile") and GripLoss > 0 then
+			self.FadeHeat = math.Clamp( self.FadeHeat + GripLoss * 0.06,0,10)
 		else
-			self:FinishSkidmark()
+			self.FadeHeat = self.FadeHeat * 0.995
 		end
-
-		local effectdata = EffectData()
-		effectdata:SetOrigin( trace.HitPos )
-		effectdata:SetEntity( Base )
-		effectdata:SetNormal( trace.HitNormal )
-		util.Effect( "simfphys_physics_wheelsmoke", effectdata, true, true )
-	else
-		self:FinishSkidmark()
-	end
-
-	if not LVS.ShowEffects then return end
-
-	if self.DustEffectSurfaces[ SurfacePropName ] then
-		local Scale = math.min( 0.3 + (SkidValue - 100) / 4000, 1 ) ^ 2
-
-		local effectdata = EffectData()
-		effectdata:SetOrigin( trace.HitPos )
-		effectdata:SetEntity( Base )
-		effectdata:SetNormal( trace.HitNormal )
-		effectdata:SetMagnitude( Scale )
-		effectdata:SetFlags( 0 )
-		util.Effect( "simfphys_physics_wheeldust", effectdata, true, true )
-	end
-end
-
-function ENT:CalcWheelEffects()
-	local T = CurTime()
-
-	if (self._NextFx or 0) > T then return end
-
-	self._NextFx = T + 0.05
-
-	local Base = self:GetBaseEnt()
-
-	if not IsValid( Base ) then return end
-
-	local Radius = Base:GetUp() * (self:GetRadius() + 1)
-
-	local Pos =  self:GetPos() + self:GetVelocity() * 0.025
-	local StartPos = Pos + Radius
-	local EndPos = Pos - Radius
-
-	local trace = util.TraceLine( {
-		start = StartPos,
-		endpos = EndPos,
-		filter = Base:GetCrosshairFilterEnts(),
-	} )
-
-	local traceWater = util.TraceLine( {
-		start = StartPos,
-		endpos = EndPos,
-		filter = Base:GetCrosshairFilterEnts(),
-		mask = MASK_WATER,
-	} )
-
-	self:CalcWheelSounds( Base, trace, traceWater )
-
-	if traceWater.Hit and trace.HitPos.z < traceWater.HitPos.z then 
-		if math.abs( self:GetRPM() ) > 25 then
+			
+		local Scale = self.FadeHeat ^ 3 * 0.001
+		local SmokeOn = (self.FadeHeat >= 7)
+		local DirtOn = GripLoss > 0.05
+		local lcolor = BaseEnt:GetTireSmokeColor() * 255
+		local Speed = self:GetVelocity():Length()
+		local OnRim = self:GetDamaged()
+		
+		local Forward = self:GetForward()
+		local Dir = (BaseEnt:GetGear() < 2) and Forward or -Forward
+		
+		local WheelSize = self.Radius or 0
+		local Pos = self:GetPos()
+		
+		if SmokeOn and not OnRim then
 			local effectdata = EffectData()
-				effectdata:SetOrigin(  traceWater.Fraction > 0.5 and traceWater.HitPos or Pos )
-				effectdata:SetEntity( Base )
-				effectdata:SetMagnitude( self:BoundingRadius() )
-				effectdata:SetFlags( 0 )
-			util.Effect( "simfphys_physics_wheelwatersplash", effectdata )
+				effectdata:SetOrigin( Pos )
+				effectdata:SetNormal( Dir )
+				effectdata:SetMagnitude( Scale ) 
+				effectdata:SetRadius( WheelSize ) 
+				effectdata:SetStart( Vector( lcolor.r, lcolor.g, lcolor.b ) )
+				effectdata:SetEntity( NULL )
+			util.Effect( "simfphys_tiresmoke", effectdata )
+		end
+		
+		if WheelOnGround == 0 then return end
+		
+		if DirtOn then
+			local effectdata = EffectData()
+				effectdata:SetOrigin( Pos )
+				effectdata:SetNormal( Dir )
+				effectdata:SetMagnitude( GripLoss ) 
+				effectdata:SetRadius( WheelSize ) 
+				effectdata:SetEntity( self )
+			util.Effect( "simfphys_tiresmoke", effectdata )
+		end
+		
+		if (Speed > 150 or DirtOn) and OnRim then
+			self:MakeSparks( GripLoss, Dir, Pos, WheelSize )
+		end
+
+	end
+
+	function ENT:MakeSparks( Scale, Dir, Pos, WheelSize )
+		self.NextSpark = self.NextSpark or 0
+		
+		if self.NextSpark < CurTime() then
+		
+			self.NextSpark = CurTime() + 0.1
+			local effectdata = EffectData()
+				effectdata:SetOrigin( Pos - Vector(0,0,WheelSize * 0.5) )
+				effectdata:SetNormal( (Dir + Vector(0,0,0.5)) * Scale * 0.5)
+			util.Effect( "manhacksparks", effectdata, true, true )
 		end
 	end
 
-	if self:GetSlip() < 500 or self:GetDamaged() then self:StopWheelEffects() return end
-
-	self:StartWheelEffects( Base, trace, traceWater )
-end
-
-function ENT:CalcWheelSounds( Base, trace, traceWater )
-	if not trace.Hit then return end
-
-	-- TODO: fix reason for this workaround
-	if trace.Entity == self then
-		if istable( Base.CrosshairFilterEnts ) and #Base.CrosshairFilterEnts > 1 then
-			Base.CrosshairFilterEnts = nil
-		end
-
-		return
+	function ENT:Draw()
+		return false
 	end
 
-	local RPM = math.abs( self:GetRPM() )
-
-	if RPM > 50 then
-		if traceWater.Hit then
-			Base:DoTireSound( "roll_wet" )
-
-			return
-		end
-
-		if self:GetDamaged() then
-			Base:DoTireSound( "roll_damaged" )
-
-			return
-		end
-
-		local surface = self.DustEffectSurfaces[ util.GetSurfacePropName( trace.SurfaceProps ) ] and "_dirt" or ""
-		local snd_type = (self:GetSlip() > 500) and "skid" or "roll"
-
-		if (istable( StormFox ) or istable( StormFox2 )) and surface ~= "_dirt" then
-			local Rain = false
-
-			if StormFox then
-				Rain = StormFox.IsRaining()
-			end
-
-			if StormFox2 then
-				Rain = StormFox2.Weather:IsRaining()
-			end
-
-			if Rain then
-				local effectdata = EffectData()
-					effectdata:SetOrigin( trace.HitPos )
-					effectdata:SetEntity( Base )
-					effectdata:SetMagnitude( self:BoundingRadius() )
-					effectdata:SetFlags( 1 )
-				util.Effect( "lvs_physics_wheelwatersplash", effectdata )
-
-				Base:DoTireSound( snd_type.."_wet" )
-
-				return
-			end
-		end
-	
-		Base:DoTireSound( snd_type..surface )
+	function ENT:OnRemove()
 	end
 end
-
-function ENT:GetSkidMarks()
-	if not istable( self._activeSkidMarks ) then
-		self._activeSkidMarks = {}
-	end
-
-	return self._activeSkidMarks
-end
-
-function ENT:StartSkidmark( pos )
-	if self:GetWidth() <= 0 or self._SkidMarkID or not LVS.ShowTraileffects then return end
-
-	local ID = 1
-	for _,_ in ipairs( self:GetSkidMarks() ) do
-		ID = ID + 1
-	end
-
-	self._activeSkidMarks[ ID ] = {
-		active = true,
-		startpos = pos + self.SkidmarkTraceAdd,
-		delay = CurTime() + self.SkidmarkDelay,
-		positions = {},
-	}
-
-	self._SkidMarkID = ID
-end
-
-function ENT:FinishSkidmark()
-	if not self._SkidMarkID then return end
-
-	self._activeSkidMarks[ self._SkidMarkID ].active = false
-
-	self._SkidMarkID = nil
-end
-
-function ENT:RemoveSkidmark( id )
-	if not id then return end
-
-	self._activeSkidMarks[ id ] = nil
-end
-
-function ENT:CalcSkidmark( trace, Filter )
-	local T = CurTime()
-	local CurActive = self:GetSkidMarks()[ self._SkidMarkID ]
-
-	if not CurActive or not CurActive.active or CurActive.delay >= T then return end
-
-	CurActive.delay = T + self.SkidmarkDelay
-
-	local W = self:GetWidth()
-
-	local cur = trace.HitPos + self.SkidmarkTraceAdd * 0.5
-
-	local prev = CurActive.positions[ #CurActive.positions ]
-
-	if not prev then
-		local sub = cur - CurActive.startpos
-
-		local L = sub:Length() * 0.5
-		local C = (cur + CurActive.startpos) * 0.5
-
-		local Ang = sub:Angle()
-		local Forward = Ang:Right()
-		local Right = Ang:Forward()
-
-		local p1 = C + Forward * W + Right * L
-		local p2 = C - Forward * W + Right * L
-
-		local t1 = util.TraceLine( { start = p1, endpos = p1 - self.SkidmarkTraceAdd } )
-		local t2 = util.TraceLine( { start = p2, endpos = p2 - self.SkidmarkTraceAdd } )
-
-		prev = {
-			px = CurActive.startpos,
-			p1 = t1.HitPos + t1.HitNormal,
-			p2 = t2.HitPos + t2.HitNormal,
-			lifetime = T + self.SkidmarkLifetime - self.SkidmarkDelay,
-			alpha = 0,
-		}
-	end
-
-	local sub = cur - prev.px
-
-	local L = sub:Length() * 0.5
-	local C = (cur + prev.px) * 0.5
-
-	local Ang = sub:Angle()
-	local Forward = Ang:Right()
-	local Right = Ang:Forward()
-
-	local p1 = C + Forward * W + Right * L
-	local p2 = C - Forward * W + Right * L
-
-	local t1 = util.TraceLine( { start = p1, endpos = p1 - self.SkidmarkTraceAdd, filter = Filter, } )
-	local t2 = util.TraceLine( { start = p2, endpos = p2 - self.SkidmarkTraceAdd, filter = Filter, } )
-
-	local nextID = #CurActive.positions + 1
-
-	CurActive.positions[ nextID ] = {
-		px = cur,
-		p1 = t1.HitPos + t1.HitNormal,
-		p2 = t2.HitPos + t2.HitNormal,
-		lifetime = T + self.SkidmarkLifetime,
-		alpha = math.min( nextID / 10, 1 ),
-	}
-end
-
-function ENT:RenderSkidMarks()
-	local T = CurTime()
-
-	for id, skidmark in pairs( self:GetSkidMarks() ) do
-		local prev
-		local AmountDrawn = 0
-
-		for markID, data in pairs( skidmark.positions ) do
-			if not prev then
-
-				prev = data
-
-				continue
-			end
-
-			local Mul = math.max( data.lifetime - CurTime(), 0 ) / self.SkidmarkLifetime
-
-			if Mul > 0 then
-				AmountDrawn = AmountDrawn + 1
-				render.DrawQuad( data.p2, data.p1, prev.p1, prev.p2, Color( self.SkidmarkRed, self.SkidmarkGreen, self.SkidmarkBlue, math.min(255 * Mul * data.alpha,self.SkidmarkAlpha) ) )
-			end
-
-			prev = data
-		end
-
-		if not skidmark.active and AmountDrawn == 0 then
-			self:RemoveSkidmark( id )
-		end
-	end
-end
-
-hook.Add( "PreDrawTranslucentRenderables", "!!!!lvs_fakephysics_skidmarks", function( bDepth, bSkybox )
-	if bSkybox then return end
-
-	render.SetColorMaterial()
-
-	for _, wheel in ipairs( ents.FindByClass("gmod_sent_vehicle_fphysics_wheel") ) do
-		wheel:RenderSkidMarks()
-	end
-end)

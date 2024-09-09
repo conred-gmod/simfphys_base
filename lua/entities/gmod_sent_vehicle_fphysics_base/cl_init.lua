@@ -1,47 +1,4 @@
 include("shared.lua")
-include("cl_tiresounds.lua")
-
-function ENT:LVSHudPaint( X, Y, ply )
-	local Pos2D = {
-		visible = true,
-		x = ScrW() * 0.5,
-		y = ScrH() * 0.5,
-	}
-
-	self:LVSPaintHitMarker( Pos2D )
-end
-
-function ENT:GetViewOverride()
-	return self.customview or vector_origin
-end
-
-function ENT:LVSCalcView( ply, pos, angles, fov, pod )
-	if pod:GetNWBool( "simfphys_SpecialCam" ) then return end
-
-	local IsDriverSeat = ply == self:GetDriver()
-
-	if IsDriverSeat and ply:lvsMouseAim() then
-		angles = ply:EyeAngles()
-	end
-
-	self.ZoomFov = fov
-
-	local view_origin = pos
-
-	if not pod:GetThirdPersonMode() then
-		local viewoverride = self:GetViewOverride()
-
-		local X = viewoverride.X
-		local Y = viewoverride.Y
-		local Z = viewoverride.Z
-
-		view_origin = view_origin + (IsDriverSeat and pod:GetForward() * X + pod:GetRight() * Y + pod:GetUp() * Z or pod:GetUp() * 5)
-	end
-
-	if not IsDriverSeat then return LVS:CalcView( self, ply, view_origin, angles, fov, pod ) end
-
-	return LVS:CalcView( self, ply, view_origin, angles, fov, pod )
-end
 
 function ENT:Initialize()	
 	self.SmoothRPM = 0
@@ -59,8 +16,8 @@ function ENT:Initialize()
 end
 
 function ENT:Think()
-	local T = CurTime()
-
+	local curtime = CurTime()
+	
 	local Active = self:GetActive()
 	local Throttle = self:GetThrottle()
 	local LimitRPM = self:GetLimitRPM()
@@ -68,16 +25,18 @@ function ENT:Think()
 	self:ManageSounds( Active, Throttle, LimitRPM )
 
 	self.RunNext = self.RunNext or 0
-	if self.RunNext < T then
+	if self.RunNext < curtime then
 		self:ManageEffects( Active, Throttle, LimitRPM )
 		self:CalcFlasher()
 		
-		self.RunNext = T + 0.06
+		self.RunNext = curtime + 0.06
 	end
-
-	self:SetPoseParameters( T )
-
-	self:TireSoundThink()
+	
+	self:SetPoseParameters( curtime )
+	
+	self:NextThink( curtime )
+	
+	return true
 end
 
 function ENT:CalcFlasher()
@@ -145,13 +104,27 @@ function ENT:SetPoseParameters( curtime )
 end
 
 function ENT:GetEnginePos()
-	if isvector( self.EnginePos ) then return self:LocalToWorld( self.EnginePos ) end
-
 	local Attachment = self:GetAttachment( self:LookupAttachment( "vehicle_engine" ) )
+	local pos = self:GetPos()
 
-	if Attachment then return Attachment.Pos end
+	if Attachment then
+		pos = Attachment.Pos
+	end
 
-	return self:GetPos()
+	if self.EnginePos == nil then
+		local vehiclelist = list.Get( "simfphys_vehicles" )[ self:GetSpawn_List() ]
+
+		if vehiclelist then
+			self.EnginePos = vehiclelist.Members.EnginePos or false
+		else
+			self.EnginePos = false
+		end
+		
+	elseif isvector( self.EnginePos ) then
+		pos = self:LocalToWorld( self.EnginePos )
+	end
+
+	return pos
 end
 
 function ENT:GetRPM()
@@ -193,13 +166,9 @@ function ENT:DamageEffects()
 	
 	if smoke then
 		if Scale <= 0.5 then
-			local HP = self:GetCurHealth()
-			local MaxHP = self:GetMaxHealth()
-
 			local effectdata = EffectData()
 				effectdata:SetOrigin( Pos )
 				effectdata:SetEntity( self )
-				effectdata:SetMagnitude( math.max(HP - MaxHP * 0.25,0) / (MaxHP * 0.25) )
 			util.Effect( "simfphys_engine_smoke", effectdata )
 		end
 	end
@@ -243,8 +212,6 @@ function ENT:ManageEffects( Active, fThrottle, LimitRPM )
 end
 
 function ENT:ManageSounds( Active, fThrottle, LimitRPM )
-	local EngineVolume = LVS.EngineVolume
-
 	local FlyWheelRPM = self:GetFlyWheelRPM()
 	local Active = Active and (FlyWheelRPM ~= 0)
 	local IdleRPM = self:GetIdleRPM()
@@ -343,7 +310,7 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 		local Pitch = math.Clamp( (20 + self.SmoothRPM / 50 - self.PitchOffset) * self.PitchMulAll,0,255)
 		
 		if self.DamageSnd then
-			self.DamageSnd:ChangeVolume( ((self.SmoothRPM / LimitRPM) * 0.6 ^ 1.5) * EngineVolume )
+			self.DamageSnd:ChangeVolume( (self.SmoothRPM / LimitRPM) * 0.6 ^ 1.5 )
 			self.DamageSnd:ChangePitch( 100 ) 
 		end
 		
@@ -421,14 +388,14 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 				self.OldGear = Gear
 			end
 			
-			self.Idle:ChangeVolume( math.Clamp( math.min((self.SmoothRPM / IdleRPM) * 3,1.5 + self.FadeThrottle  * 0.5) * 0.7 - self.SmoothRPM / 2000 ,0,1) * EngineVolume )
+			self.Idle:ChangeVolume( math.Clamp( math.min((self.SmoothRPM / IdleRPM) * 3,1.5 + self.FadeThrottle  * 0.5) * 0.7 - self.SmoothRPM / 2000 ,0,1) )
 			self.Idle:ChangePitch( math.Clamp( Pitch * 3,0,255) ) 
 			
-			self.LowRPM:ChangeVolume( math.Clamp(Volume - (self.SmoothRPM - 2000) / 2000 * self.FadeThrottle,0,1) * EngineVolume )
+			self.LowRPM:ChangeVolume( math.Clamp(Volume - (self.SmoothRPM - 2000) / 2000 * self.FadeThrottle,0,1) )
 			self.LowRPM:ChangePitch( math.Clamp( Pitch * self.PitchMulLow,0,255) )
 			
 			local hivol = math.max((self.SmoothRPM - 2000) / 2000,0) * Volume
-			self.HighRPM:ChangeVolume( (self.FadeThrottle < 0.4 and hivol * self.FadeThrottle or hivol * self.FadeThrottle * 2.5) * EngineVolume )
+			self.HighRPM:ChangeVolume( self.FadeThrottle < 0.4 and hivol * self.FadeThrottle or hivol * self.FadeThrottle * 2.5 )
 			self.HighRPM:ChangePitch( math.Clamp( Pitch * self.PitchMulHigh,0,255) )
 		else
 			if Gear ~= self.OldGear then
@@ -451,26 +418,26 @@ function ENT:ManageSounds( Active, fThrottle, LimitRPM )
 		
 		
 			local IdlePitch = self.Idle_PitchMul
-			self.Idle:ChangeVolume( math.Clamp( math.min((self.SmoothRPM / IdleRPM) * 3,1.5 + self.FadeThrottle * 0.5) * 0.7 - self.SmoothRPM / 2000,0,1) * EngineVolume )
+			self.Idle:ChangeVolume( math.Clamp( math.min((self.SmoothRPM / IdleRPM) * 3,1.5 + self.FadeThrottle * 0.5) * 0.7 - self.SmoothRPM / 2000,0,1))
 			self.Idle:ChangePitch( math.Clamp( Pitch * 3 * IdlePitch,0,255) )
 			
 			local LowPitch = self.Mid_PitchMul
 			local LowVolume = self.Mid_VolumeMul
 			local LowFadeOutRPM = LimitRPM * (self.Mid_FadeOutRPMpercent / 100)
 			local LowFadeOutRate = LimitRPM * self.Mid_FadeOutRate
-			self.LowRPM:ChangeVolume( math.Clamp( (Volume - math.Clamp((self.SmoothRPM - LowFadeOutRPM) / LowFadeOutRate,0,1)) * LowVolume,0,1) * EngineVolume )
+			self.LowRPM:ChangeVolume( math.Clamp( (Volume - math.Clamp((self.SmoothRPM - LowFadeOutRPM) / LowFadeOutRate,0,1)) * LowVolume,0,1))
 			self.LowRPM:ChangePitch( math.Clamp(Pitch * LowPitch,0,255) ) 
 			
 			local HighPitch = self.High_PitchMul
 			local HighVolume = self.High_VolumeMul
 			local HighFadeInRPM = LimitRPM * (self.High_FadeInRPMpercent / 100)
 			local HighFadeInRate = LimitRPM * self.High_FadeInRate
-			self.HighRPM:ChangeVolume( math.Clamp( math.Clamp((self.SmoothRPM - HighFadeInRPM) / HighFadeInRate,0,Volume) * HighVolume,0,1) * EngineVolume)
+			self.HighRPM:ChangeVolume( math.Clamp( math.Clamp((self.SmoothRPM - HighFadeInRPM) / HighFadeInRate,0,Volume) * HighVolume,0,1))
 			self.HighRPM:ChangePitch( math.Clamp(Pitch * HighPitch,0,255) ) 
 			
 			local ThrottlePitch = self.Throttle_PitchMul
 			local ThrottleVolume = self.Throttle_VolumeMul
-			self.Valves:ChangeVolume( math.Clamp((self.SmoothRPM - 2000) / 2000,0,Volume) * (0.2 + 0.15 * self.FadeThrottle) * ThrottleVolume * EngineVolume )
+			self.Valves:ChangeVolume( math.Clamp((self.SmoothRPM - 2000) / 2000,0,Volume) * (0.2 + 0.15 * self.FadeThrottle) * ThrottleVolume)
 			self.Valves:ChangePitch( math.Clamp(Pitch * ThrottlePitch,0,255) ) 
 		end
 	end
@@ -509,44 +476,74 @@ function ENT:Backfire( damaged )
 	end
 end
 
+function ENT:Draw()
+	self:DrawModel()
+end
+
 function ENT:SetSoundPreset(index)
+	local vehiclelist = list.Get( "simfphys_vehicles" )[self:GetSpawn_List()] or false
+	
+	if vehiclelist then
+		if not self.ExhaustPositions then
+			self.ExhaustPositions = vehiclelist.Members.ExhaustPositions
+		end
+	end
+	
 	if index == -1 then
-		local soundoverride = self:GetSoundoverride()
-		local data = string.Explode( ",", soundoverride)
-		
-		if soundoverride ~= "" and data[1] == "1"  then
+		if vehiclelist then
+			local soundoverride = self:GetSoundoverride()
+			local data = string.Explode( ",", soundoverride)
 			
-			self.EngineSounds[ "Idle" ] = data[4]
-			self.EngineSounds[ "LowRPM" ] = data[6]
-			self.EngineSounds[ "HighRPM" ] = data[2]
-			self.EngineSounds[ "RevDown" ] = data[8]
-			self.EngineSounds[ "ShiftUpToHigh" ] = data[10]
-			self.EngineSounds[ "ShiftDownToHigh" ] = data[9]
+			if soundoverride ~= "" and data[1] == "1"  then
+				
+				self.EngineSounds[ "Idle" ] = data[4]
+				self.EngineSounds[ "LowRPM" ] = data[6]
+				self.EngineSounds[ "HighRPM" ] = data[2]
+				self.EngineSounds[ "RevDown" ] = data[8]
+				self.EngineSounds[ "ShiftUpToHigh" ] = data[10]
+				self.EngineSounds[ "ShiftDownToHigh" ] = data[9]
+				
+				self.PitchMulLow = data[7]
+				self.PitchMulHigh = data[3]
+				self.PitchMulAll = data[5]
+			else 
+				
+				local idle = vehiclelist.Members.snd_idle or ""
+				local low = vehiclelist.Members.snd_low or ""
+				local mid = vehiclelist.Members.snd_mid or ""
+				local revdown = vehiclelist.Members.snd_low_revdown or ""
+				local gearup = vehiclelist.Members.snd_mid_gearup or ""
+				local geardown = vehiclelist.Members.snd_mid_geardown or ""
+				
+				self.EngineSounds[ "Idle" ] = idle ~= "" and idle or false
+				self.EngineSounds[ "LowRPM" ] = low ~= "" and low or false
+				self.EngineSounds[ "HighRPM" ] = mid ~= "" and mid or false
+				self.EngineSounds[ "RevDown" ] = revdown ~= "" and revdown or low
+				self.EngineSounds[ "ShiftUpToHigh" ] = gearup ~= "" and gearup or mid
+				self.EngineSounds[ "ShiftDownToHigh" ] = geardown ~= "" and geardown or gearup
+				
+				self.PitchMulLow = vehiclelist.Members.snd_low_pitch or 1
+				self.PitchMulHigh = vehiclelist.Members.snd_mid_pitch or 1
+				self.PitchMulAll = vehiclelist.Members.snd_pitch or 1
+			end
+		else
+			local ded = "common/bugreporter_failed.wav"
 			
-			self.PitchMulLow = data[7]
-			self.PitchMulHigh = data[3]
-			self.PitchMulAll = data[5]
-		else 
-			local idle = self.snd_idle or ""
-			local low = self.snd_low or ""
-			local mid = self.snd_mid or ""
-			local revdown = self.snd_low_revdown or ""
-			local gearup = self.snd_mid_gearup or ""
-			local geardown = self.snd_mid_geardown or ""
+			self.EngineSounds[ "Idle" ] = ded
+			self.EngineSounds[ "LowRPM" ] = ded
+			self.EngineSounds[ "HighRPM" ] = ded
+			self.EngineSounds[ "RevDown" ] = ded
+			self.EngineSounds[ "ShiftUpToHigh" ] = ded
+			self.EngineSounds[ "ShiftDownToHigh" ] = ded
 			
-			self.EngineSounds[ "Idle" ] = idle ~= "" and idle or false
-			self.EngineSounds[ "LowRPM" ] = low ~= "" and low or false
-			self.EngineSounds[ "HighRPM" ] = mid ~= "" and mid or false
-			self.EngineSounds[ "RevDown" ] = revdown ~= "" and revdown or low
-			self.EngineSounds[ "ShiftUpToHigh" ] = gearup ~= "" and gearup or mid
-			self.EngineSounds[ "ShiftDownToHigh" ] = geardown ~= "" and geardown or gearup
-			
-			self.PitchMulLow = self.snd_low_pitch or 1
-			self.PitchMulHigh = self.snd_mid_pitch or 1
-			self.PitchMulAll = self.snd_pitch or 1
+			self.PitchMulLow = 0
+			self.PitchMulHigh = 0
+			self.PitchMulAll = 0
 		end
 		
 		if self.EngineSounds[ "Idle" ] ~= false and self.EngineSounds[ "LowRPM" ] ~= false and self.EngineSounds[ "HighRPM" ] ~= false then
+			self:PrecacheSounds()
+			
 			return true
 		else
 			self:SetSoundPreset( 0 )
@@ -557,54 +554,56 @@ function ENT:SetSoundPreset(index)
 	if index == 0 then
 		local soundoverride = self:GetSoundoverride()
 		local data = string.Explode( ",", soundoverride)
-
+		
 		if soundoverride ~= "" and data[1] ~= "1"  then
 			self.EngineSounds[ "IdleSound" ] = data[1]
 			self.Idle_PitchMul = data[2]
-
+			
 			self.EngineSounds[ "LowSound" ] = data[3]
 			self.Mid_PitchMul = data[4]
 			self.Mid_VolumeMul =  data[5]
 			self.Mid_FadeOutRPMpercent =  data[6]
 			self.Mid_FadeOutRate = data[7]
-
+			
 			self.EngineSounds[ "HighSound" ] = data[8]
 			self.High_PitchMul = data[9]
 			self.High_VolumeMul = data[10]
 			self.High_FadeInRPMpercent = data[11]
 			self.High_FadeInRate = data[12]
-
+			
 			self.EngineSounds[ "ThrottleSound" ] = data[13]
 			self.Throttle_PitchMul = data[14]
 			self.Throttle_VolumeMul = data[15]
 		else
-			self.EngineSounds[ "IdleSound" ] = self.Sound_Idle or "simulated_vehicles/misc/e49_idle.wav"
-			self.Idle_PitchMul = self.Sound_IdlePitch or 1
-
-			self.EngineSounds[ "LowSound" ] = self.Sound_Mid or "simulated_vehicles/misc/gto_onlow.wav"
-			self.Mid_PitchMul = self.Sound_MidPitch or 1
-			self.Mid_VolumeMul =  self.Sound_MidVolume or 0.75
-			self.Mid_FadeOutRPMpercent = self.Sound_MidFadeOutRPMpercent or 68
-			self.Mid_FadeOutRate = self.Sound_MidFadeOutRate or 0.4
-
-			self.EngineSounds[ "HighSound" ] = self.Sound_High or "simulated_vehicles/misc/nv2_onlow_ex.wav"
-			self.High_PitchMul = self.Sound_HighPitch or 1 
-			self.High_VolumeMul = self.Sound_HighVolume or 1 
-			self.High_FadeInRPMpercent = self.Sound_HighFadeInRPMpercent or 26.6
-			self.High_FadeInRate = self.Sound_HighFadeInRate or 0.266
-
-			self.EngineSounds[ "ThrottleSound" ] = self.Sound_Throttle or "simulated_vehicles/valve_noise.wav"
-			self.Throttle_PitchMul = self.Sound_ThrottlePitch or 0.65
-			self.Throttle_VolumeMul = self.Sound_ThrottleVolume or 1 
+			self.EngineSounds[ "IdleSound" ] = vehiclelist and vehiclelist.Members.Sound_Idle or "simulated_vehicles/misc/e49_idle.wav"
+			self.Idle_PitchMul = (vehiclelist and vehiclelist.Members.Sound_IdlePitch) or 1
+			
+			self.EngineSounds[ "LowSound" ] = vehiclelist and vehiclelist.Members.Sound_Mid or "simulated_vehicles/misc/gto_onlow.wav"
+			self.Mid_PitchMul = (vehiclelist and vehiclelist.Members.Sound_MidPitch) or 1
+			self.Mid_VolumeMul =  (vehiclelist and vehiclelist.Members.Sound_MidVolume) or 0.75
+			self.Mid_FadeOutRPMpercent =  (vehiclelist and vehiclelist.Members.Sound_MidFadeOutRPMpercent) or 68
+			self.Mid_FadeOutRate =  (vehiclelist and vehiclelist.Members.Sound_MidFadeOutRate) or 0.4
+			
+			self.EngineSounds[ "HighSound" ] = vehiclelist and vehiclelist.Members.Sound_High or "simulated_vehicles/misc/nv2_onlow_ex.wav"
+			self.High_PitchMul = (vehiclelist and vehiclelist.Members.Sound_HighPitch) or 1 
+			self.High_VolumeMul = (vehiclelist and vehiclelist.Members.Sound_HighVolume) or 1 
+			self.High_FadeInRPMpercent = (vehiclelist and vehiclelist.Members.Sound_HighFadeInRPMpercent) or 26.6
+			self.High_FadeInRate = (vehiclelist and vehiclelist.Members.Sound_HighFadeInRate) or 0.266
+			
+			self.EngineSounds[ "ThrottleSound" ] = vehiclelist and vehiclelist.Members.Sound_Throttle or "simulated_vehicles/valve_noise.wav"
+			self.Throttle_PitchMul = (vehiclelist and vehiclelist.Members.Sound_ThrottlePitch) or 0.65
+			self.Throttle_VolumeMul = (vehiclelist and vehiclelist.Members.Sound_ThrottleVolume) or 1 
 		end
 		
 		self.PitchMulLow = 1
 		self.PitchMulHigh = 1
 		self.PitchMulAll = 1
-
+		
+		self:PrecacheSounds()
+		
 		return false
 	end
-
+	
 	if index > 0 then
 		local clampindex = math.Clamp(index,1,table.Count(simfphys.SoundPresets))
 		self.EngineSounds[ "Idle" ] = simfphys.SoundPresets[clampindex][1]
@@ -613,15 +612,30 @@ function ENT:SetSoundPreset(index)
 		self.EngineSounds[ "RevDown" ] = simfphys.SoundPresets[clampindex][4]
 		self.EngineSounds[ "ShiftUpToHigh" ] = simfphys.SoundPresets[clampindex][5]
 		self.EngineSounds[ "ShiftDownToHigh" ] = simfphys.SoundPresets[clampindex][6]
-
+		
 		self.PitchMulLow = simfphys.SoundPresets[clampindex][7]
 		self.PitchMulHigh = simfphys.SoundPresets[clampindex][8]
 		self.PitchMulAll = simfphys.SoundPresets[clampindex][9]
-
+		
+		self:PrecacheSounds()
+		
 		return true
 	end
 	
 	return false
+end
+
+function ENT:PrecacheSounds()
+	for index, sound in pairs( self.EngineSounds ) do
+		if not isbool(sound) then
+			if file.Exists( "sound/"..sound, "GAME" ) then
+				util.PrecacheSound( sound )
+			else
+				print("Warning soundfile \""..sound.."\" not found. Using \"common/null.wav\" instead to prevent fps rape")
+				self.EngineSounds[index] = "common/null.wav"
+			end
+		end
+	end
 end
 
 function ENT:GetVehicleInfo()
@@ -650,18 +664,14 @@ function ENT:SaveStopSounds()
 	end
 end
 
-function ENT:StopFireSound()
+function ENT:OnRemove()
+	self:SaveStopSounds()
+	
 	if self.smokesnd then
 		self.smokesnd:Stop()
 	end
-
+	
 	if self.firesnd then
 		self.firesnd:Stop()
 	end
-end
-
-function ENT:OnRemove()
-	self:SaveStopSounds()
-	self:StopFireSound()
-	self:TireSoundRemove()
 end
