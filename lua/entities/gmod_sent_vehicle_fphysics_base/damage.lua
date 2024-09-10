@@ -137,8 +137,14 @@ function ENT:ExplodeVehicle()
 		bprop.MakeSound = true
 		bprop:Spawn()
 		bprop:Activate()
-		bprop:GetPhysicsObject():SetVelocity( self:GetVelocity() + Vector(math.random(-5,5),math.random(-5,5),math.random(150,250)) ) 
-		bprop:GetPhysicsObject():SetMass( self.Mass * 0.75 )
+
+		local bpropPhysObj = bprop:GetPhysicsObject()
+
+		if IsValid( bpropPhysObj ) then
+			bpropPhysObj:SetVelocity( self:GetVelocity() + Vector(math.random(-5,5),math.random(-5,5),math.random(150,250)) ) 
+			bpropPhysObj:SetMass( self.Mass * 0.75 )
+		end
+
 		bprop.DoNotDuplicate = true
 		bprop:SetColor( Col )
 		bprop:SetSkin( skin )
