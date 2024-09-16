@@ -28,5 +28,6 @@ if CLIENT then
 	end
 
 	function ENT:DrawTranslucent()
+		self:Draw()
 	end
 end

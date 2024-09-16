@@ -24,11 +24,7 @@ function EFFECT:Init( data )
 	local Pos = data:GetOrigin()
 	local Dir = data:GetNormal()
 	local WheelSize = data:GetRadius()
-	local ColorIn = data:GetStart()
-
-	local VecCol = render.GetLightColor( Pos + Dir ) * 0.4 + Vector(0.6,0.6,0.6)
-
-	local Col = Vector( math.min(ColorIn.x * VecCol.x, 255), math.min(ColorIn.y * VecCol.y, 255), math.min(ColorIn.z * VecCol.z, 255) )
+	local Color = data:GetStart()
 
 	local Ran = Vector( math.Rand( -WheelSize, WheelSize ), math.Rand( -WheelSize, WheelSize ),math.Rand( -WheelSize, WheelSize ) ) * 0.3
 	local OffsetPos = Pos + Ran + Vector(0,0,WheelSize * 0.2)
@@ -36,34 +32,62 @@ function EFFECT:Init( data )
 	local emitter = ParticleEmitter(Pos, false )
 	
 	if emitter then
-		local OffsetPos2 = OffsetPos + Ran * 0.4 + Vector(0,0,-WheelSize)
+		if IsValid( Entity ) then
+				local Vel = Entity:GetVelocity() / 3
+				
+				local OffsetPos = OffsetPos + Ran * 0.4 + Vector(0,0,-WheelSize * 0.8)
+				
+				local particle = emitter:Add( Materials[math.Round(math.Rand(1, table.Count(Materials) ),0)], OffsetPos )
+				
+				local Mul = 0.3 + Mul * 0.05
+				
+				local Color = render.ComputeLighting( Pos, Vector( 0, 0, 1 ) )
 
-		local particle1 = emitter:Add( Materials[math.Round(math.Rand(1, table.Count(Materials) ),0)], OffsetPos )
-		local particle2 = emitter:Add( Materials[math.Round(math.Rand(1, table.Count(Materials) ),0)], OffsetPos2 )
+				Color.x = 55 + ( math.Clamp( Color.x, 0, 1 ) ) * 200
+				Color.y = 55 + ( math.Clamp( Color.y, 0, 1 ) ) * 200
+				Color.z = 55 + ( math.Clamp( Color.z, 0, 1 ) ) * 200
+				
+				if particle then
+					particle:SetGravity( Vector(0,0,12) + Ran * 0.2 ) 
+					particle:SetVelocity( Dir * 10 * (3 - Mul) + Vector(0,0,15) + Ran * Mul + Vel  )
+					particle:SetDieTime( 0.5 )
+					particle:SetStartAlpha( 20 )
+					particle:SetStartSize( WheelSize * 0.7 * Mul )
+					particle:SetEndSize( math.Rand( 80, 160 ) * Mul ^ 2 )
+					particle:SetRoll( math.Rand( -1, 1 ) )
+					particle:SetColor( Color.x,Color.y,Color.z )
+					particle:SetCollide( false )
+				end
+		else
+			local OffsetPos2 = OffsetPos + Ran * 0.4 + Vector(0,0,-WheelSize)
 
-		if particle1 then
-			particle1:SetVelocity( Vector(0,0,-50) )
-			particle1:SetDieTime( 0.5 )
-			particle1:SetStartAlpha( 255 * Mul ^ 2 )
-			particle1:SetStartSize( 16 * Mul )
-			particle1:SetEndSize( 32 * Mul )
-			particle1:SetRoll( math.Rand( -1, 1 ) )
-			particle1:SetColor( Col.x * 0.9,Col.y * 0.9,Col.z * 0.9 )
-			particle1:SetCollide( true )
+			local particle1 = emitter:Add( Materials[math.Round(math.Rand(1, table.Count(Materials) ),0)], OffsetPos )
+			local particle2 = emitter:Add( Materials[math.Round(math.Rand(1, table.Count(Materials) ),0)], OffsetPos2 )
+
+			if particle1 then
+				particle1:SetVelocity( Vector(0,0,-50) )
+				particle1:SetDieTime( 0.5 )
+				particle1:SetStartAlpha( 255 * Mul ^ 2 )
+				particle1:SetStartSize( 16 * Mul )
+				particle1:SetEndSize( 32 * Mul )
+				particle1:SetRoll( math.Rand( -1, 1 ) )
+				particle1:SetColor( Color.x * 0.9,Color.y * 0.9,Color.z * 0.9 )
+				particle1:SetCollide( true )
+			end
+			
+			if particle2 then
+				particle2:SetGravity( Vector(0,0,12) + Ran * 0.2 ) 
+				particle2:SetVelocity( Dir * 30 * (3 - Mul) + Vector(0,0,15) + Ran * Mul  )
+				particle2:SetDieTime( math.Rand( 2, 4 ) * Mul )
+				particle2:SetStartAlpha( 100 * Mul )
+				particle2:SetStartSize( WheelSize * 0.7 * Mul )
+				particle2:SetEndSize( math.Rand( 80, 160 ) * Mul ^ 2 )
+				particle2:SetRoll( math.Rand( -1, 1 ) )
+				particle2:SetColor( Color.x,Color.y,Color.z )
+				particle2:SetCollide( false )
+			end
 		end
 		
-		if particle2 then
-			particle2:SetGravity( Vector(0,0,12) + Ran * 0.2 ) 
-			particle2:SetVelocity( Dir * 30 * (3 - Mul) + Vector(0,0,15) + Ran * Mul  )
-			particle2:SetDieTime( math.Rand( 2, 4 ) * Mul )
-			particle2:SetStartAlpha( 100 * Mul )
-			particle2:SetStartSize( WheelSize * 0.7 * Mul )
-			particle2:SetEndSize( math.Rand( 80, 160 ) * Mul ^ 2 )
-			particle2:SetRoll( math.Rand( -1, 1 ) )
-			particle2:SetColor( Col.x,Col.y,Col.z )
-			particle2:SetCollide( false )
-		end
-
 		emitter:Finish()
 	end
 end

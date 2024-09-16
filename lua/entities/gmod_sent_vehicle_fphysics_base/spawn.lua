@@ -145,24 +145,20 @@ function ENT:InitializeVehicle()
 	if self.Inertia then
 		physObj:SetInertia( self.Inertia ) 
 	end
-
+	
 	local tanksize = self.FuelTankSize and self.FuelTankSize or 65
 	local fueltype = self.FuelType and self.FuelType or FUELTYPE_PETROL
-
+	
 	self:SetMaxFuel( tanksize )
 	self:SetFuel( self:GetMaxFuel() )
 	self:SetFuelType( fueltype )
 	self:SetFuelPos( self.FuelFillPos and self.FuelFillPos or Vector(0,0,0) )
-
-	if fueltype ~= FUELTYPE_NONE then
-		self:AddFuelTank()
-	end
-
+	
 	local View = self:SetupView()
 	
 	self.DriverSeat = ents.Create( "prop_vehicle_prisoner_pod" )
 	self.DriverSeat:SetMoveType( MOVETYPE_NONE )
-
+	
 	self.DriverSeat:SetModel( "models/nova/airboat_seat.mdl" )
 	self.DriverSeat:SetKeyValue( "vehiclescript","scripts/vehicles/prisoner_pod.txt" )
 	self.DriverSeat:SetKeyValue( "limitview", self.LimitView and 1 or 0 )
@@ -197,7 +193,7 @@ function ENT:InitializeVehicle()
 	self.DriverSeat:DrawShadow( false )
 
 	simfphys.SetOwner( self.EntityOwner, self.DriverSeat )
-
+	
 	if self.PassengerSeats then
 		for i = 1, table.Count( self.PassengerSeats ) do
 			self.pSeat[i] = ents.Create( "prop_vehicle_prisoner_pod" )
@@ -244,7 +240,7 @@ function ENT:InitializeVehicle()
 
 	if self.Attachments then
 		for i = 1, table.Count( self.Attachments ) do
-			local prop = ents.Create( "gmod_sent_vehicle_fphysics_attachment" )
+			local prop = ents.Create( ((self.Attachments[i].IsGlass == true) and "gmod_sent_vehicle_fphysics_attachment_translucent" or "gmod_sent_vehicle_fphysics_attachment") )
 			prop:SetModel( self.Attachments[i].model )			
 			prop:SetMaterial( self.Attachments[i].material )
 			prop:SetRenderMode( RENDERMODE_TRANSALPHA )
@@ -323,7 +319,8 @@ function ENT:SetValues()
 	end
 	
 	self:SetGear( 2 )
-
+	
+	self.EnableSuspension = 0
 	self.WheelOnGroundDelay = 0
 	self.SmoothAng = 0
 	self.Steer = 0
@@ -428,12 +425,10 @@ function ENT:WriteVehicleDataTable()
 		self.BlowerWhine = CreateSound(self, "")
 		self.BlowOff = CreateSound(self, "")
 
-		local Health = math.floor(self.MaxHealth ~= -1 and self.MaxHealth or (1000 + self:GetPhysicsObject():GetMass() / 3))
+		local Health = math.floor(self.MaxHealth and self.MaxHealth or (1000 + self:GetPhysicsObject():GetMass() / 3))
 		self:SetMaxHealth( Health )
 		self:SetCurHealth( Health )
-
-		self:SetAITEAM( self.AITEAM )
-
+		
 		self:SetFastSteerAngle(self.FastSteeringAngle / self.VehicleData["steerangle"])
 		self:SetNotSolid( false )
 		self:SetupVehicle()
@@ -599,19 +594,13 @@ function ENT:SetupVehicle()
 			end
 		end )
 	end )
-
-	if istable( self.GibModels ) then
-		for _, modelName in ipairs( self.GibModels ) do
-			util.PrecacheModel( modelName )
-		end
-	end
-
+	
+	self.VehicleData["filter"] = table.Copy( self.Wheels )
+	table.insert( self.VehicleData["filter"], self )
+	
+	self.EnableSuspension = 1
 	self:OnSpawn()
 	hook.Run( "simfphysOnSpawn", self )
-
-	self:SetlvsReady( true )
-
-	self.VehicleData["filter"] = self:GetCrosshairFilterEnts()
 end
 
 function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , poseposition, suspensiontravel, constant, damping, rdamping)
@@ -633,7 +622,7 @@ function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , po
 	if self.RearWheelMass and (index == 3 or index == 4 or index == 5 or index == 6) then
 		WheelMass = self.RearWheelMass
 	end
-
+	
 	self.name = ents.Create( "gmod_sent_vehicle_fphysics_wheel" )
 	self.name:SetPos( attachmentpos - Up * height)
 	self.name:SetAngles( fAng )
@@ -648,8 +637,7 @@ function ENT:CreateWheel(index, name, attachmentpos, height, radius, swap_y , po
 	self.name.EntityOwner = self.EntityOwner
 	self.name.Index = index
 	self.name.Radius = radius
-	self.name:SetRadius( radius )
-
+	
 	if self.CustomWheels then
 		local Model = (self.CustomWheelModel_R and (index == 3 or index == 4 or index == 5 or index == 6)) and self.CustomWheelModel_R or self.CustomWheelModel
 		local ghostAng = Right:Angle()

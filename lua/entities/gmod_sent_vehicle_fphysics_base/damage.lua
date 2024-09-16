@@ -1,8 +1,3 @@
-ENT.DSArmorDamageReduction = 1
-ENT.DSArmorDamageReductionType = DMG_GENERIC
-
-ENT.DSArmorIgnoreDamageType = DMG_GENERIC
-
 function ENT:ApplyDamage( damage, type )
 	if type == DMG_BLAST then 
 		damage = damage * 10
@@ -33,8 +28,18 @@ function ENT:ApplyDamage( damage, type )
 	end
 
 	if NewHealth <= 0 then
+		if (type ~= DMG_CRUSH and type ~= DMG_GENERIC) or damage > MaxHealth then
 
-		self:ExplodeVehicle()
+			self:ExplodeVehicle()
+
+			return
+		end
+
+		if self:EngineActive() then
+			self:DamagedStall()
+		end
+
+		self:SetCurHealth( 0 )
 
 		return
 	end
@@ -42,118 +47,52 @@ function ENT:ApplyDamage( damage, type )
 	self:SetCurHealth( NewHealth )
 end
 
-function ENT:OnTakeDamage( dmginfo )
-	if not self:IsInitialized() then return end
+function ENT:HurtPlayers( damage )
+	if not simfphys.pDamageEnabled then return end
 
-	if dmginfo:IsDamageType( self.DSArmorIgnoreDamageType ) then return end
-
-	if dmginfo:IsDamageType( self.DSArmorDamageReductionType ) then
-		if dmginfo:GetDamage() ~= 0 then
-			dmginfo:ScaleDamage( self.DSArmorDamageReduction )
-
-			dmginfo:SetDamage( math.max(dmginfo:GetDamage(),1) )
-		end
-	end
-
-	if dmginfo:IsDamageType( DMG_BLAST ) then
-		local Inflictor = dmginfo:GetInflictor()
-
-		if IsValid( Inflictor ) and isfunction( Inflictor.GetEntityFilter ) then
-			for ents, _ in pairs( Inflictor:GetEntityFilter() ) do
-				if ents == self then return end
-			end
-		end
-	end
-
-	local dmgPartsTableOK = true
-
-	if istable( self._dmgParts ) then
-		for _, part in pairs( self._dmgParts ) do
-			if isvector( part.mins ) and isvector( part.maxs ) and isvector( part.pos ) and isangle( part.ang ) then continue end
-
-			dmgPartsTableOK = false
-
-			break
-		end
-	else
-		dmgPartsTableOK = false
-	end
-
-	local CriticalHit = false
-
-	if dmgPartsTableOK then
-		CriticalHit = self:CalcComponentDamage( dmginfo )
-	else
-		print("[LVS] - "..self:GetSpawn_List().." is doing something it shouldn't! DS part has been detected but was registered incorrectly!")
-	end
-
-	if hook.Run( "simfphysOnTakeDamage", self, dmginfo ) then return end
-
-	local Damage = dmginfo:GetDamage() 
-	local DamagePos = dmginfo:GetDamagePosition() 
-	local Type = dmginfo:GetDamageType()
 	local Driver = self:GetDriver()
 
-	self.LastAttacker = dmginfo:GetAttacker() 
-	self.LastInflictor = dmginfo:GetInflictor()
+	if IsValid( Driver ) then
+		if self.RemoteDriver ~= Driver then
+			local dmginfo = DamageInfo()
+			dmginfo:SetDamage( damage )
+			dmginfo:SetAttacker( game.GetWorld() )
+			dmginfo:SetInflictor( self )
+			dmginfo:SetDamageType( DMG_DIRECT )
 
-	if simfphys.DamageEnabled then
-		net.Start( "simfphys_spritedamage" )
-			net.WriteEntity( self )
-			net.WriteVector( self:WorldToLocal( DamagePos ) ) 
-			net.WriteBool( false ) 
-		net.Broadcast()
-
-		-- if Type == DMG_AIRBOAT then
-		-- 	Type = DMG_DIRECT
-		-- 	Damage = Damage * 6
-		-- end
-
-		local oldHP = self:GetCurHealth()
-
-		self:ApplyDamage( Damage, Type )
-
-		local newHP = self:GetCurHealth()
-
-		if oldHP ~= newHP then
-			local IsFireDamage = dmginfo:IsDamageType( DMG_BURN )
-
-			if IsValid( self.LastAttacker ) and self.LastAttacker:IsPlayer() and not IsFireDamage then
-				net.Start( "lvs_hitmarker" )
-					net.WriteBool( CriticalHit )
-				net.Send( self.LastAttacker )
-			end
-
-			if Damage > 1 and not IsFireDamage then
-				net.Start( "lvs_hurtmarker" )
-					net.WriteFloat( math.min( Damage / 50, 1 ) )
-				net.Send( self:GetEveryone() )
-			end
+			Driver:TakeDamageInfo( dmginfo )
 		end
+	end
+
+	if not istable( self.PassengerSeats ) then return end
+
+	for i = 1, table.Count( self.PassengerSeats ) do
+		local Passenger = self.pSeat[i]:GetDriver()
+		
+		if not IsValid(Passenger) then continue end
+
+		local dmginfo = DamageInfo()
+		dmginfo:SetDamage( damage )
+		dmginfo:SetAttacker( game.GetWorld() )
+		dmginfo:SetInflictor( self )
+		dmginfo:SetDamageType( DMG_DIRECT )
+
+		Passenger:TakeDamageInfo( dmginfo )
 	end
 end
 
 function ENT:ExplodeVehicle()
 	if not IsValid( self ) then return end
-
 	if self.destroyed then return end
 
 	self.destroyed = true
 
 	local Attacker = self.LastAttacker
 
-	if IsValid( Attacker ) and Attacker:IsPlayer() then
+	if IsValid( Attacker ) and Attacker:IsPlayer() and LVS then
 		net.Start( "lvs_killmarker" )
 		net.Send( Attacker )
 	end
-
-	local GibMDL = self.GibModels
-	self.GibModels = nil
-
-	self:OnFinishExplosion()
-
-	self.GibModels = GibMDL
-	GibMDL = nil
 
 	local ply = self.EntityOwner
 	local skin = self:GetSkin()
@@ -198,8 +137,14 @@ function ENT:ExplodeVehicle()
 		bprop.MakeSound = true
 		bprop:Spawn()
 		bprop:Activate()
-		bprop:GetPhysicsObject():SetVelocity( self:GetVelocity() + Vector(math.random(-5,5),math.random(-5,5),math.random(150,250)) ) 
-		bprop:GetPhysicsObject():SetMass( self.Mass * 0.75 )
+
+		local bpropPhysObj = bprop:GetPhysicsObject()
+
+		if IsValid( bpropPhysObj ) then
+			bpropPhysObj:SetVelocity( self:GetVelocity() + Vector(math.random(-5,5),math.random(-5,5),math.random(150,250)) ) 
+			bpropPhysObj:SetMass( self.Mass * 0.75 )
+		end
+
 		bprop.DoNotDuplicate = true
 		bprop:SetColor( Col )
 		bprop:SetSkin( skin )
@@ -301,4 +246,102 @@ function ENT:ExplodeVehicle()
 	hook.Run( "simfphysOnDestroyed", self, self.Gib )
 	
 	self:Remove()
+end
+
+function ENT:OnTakeDamage( dmginfo )
+	if not self:IsInitialized() then return end
+
+	if hook.Run( "simfphysOnTakeDamage", self, dmginfo ) then return end
+
+	local Damage = dmginfo:GetDamage() 
+	local DamagePos = dmginfo:GetDamagePosition() 
+	local Type = dmginfo:GetDamageType()
+	local Driver = self:GetDriver()
+
+	self.LastAttacker = dmginfo:GetAttacker() 
+	self.LastInflictor = dmginfo:GetInflictor()
+
+	if simfphys.DamageEnabled then
+		net.Start( "simfphys_spritedamage" )
+			net.WriteEntity( self )
+			net.WriteVector( self:WorldToLocal( DamagePos ) ) 
+			net.WriteBool( false ) 
+		net.Broadcast()
+
+		if LVS and Type == DMG_AIRBOAT then
+			Type = DMG_DIRECT
+			Damage = Damage * 5
+		end
+
+		local oldHP = self:GetCurHealth()
+
+		self:ApplyDamage( Damage, Type )
+
+		local newHP = self:GetCurHealth()
+
+		if not LVS then return end
+
+		if oldHP ~= newHP then
+			local IsFireDamage = dmginfo:IsDamageType( DMG_BURN )
+
+			if IsValid( self.LastAttacker ) and self.LastAttacker:IsPlayer() and not IsFireDamage then
+				net.Start( "lvs_hitmarker" )
+					net.WriteBool( CriticalHit )
+				net.Send( self.LastAttacker )
+			end
+		end
+	end
+end
+
+local function Spark( pos , normal , snd )
+	local effectdata = EffectData()
+	effectdata:SetOrigin( pos - normal )
+	effectdata:SetNormal( -normal )
+	util.Effect( "stunstickimpact", effectdata, true, true )
+	
+	if snd then
+		sound.Play( Sound( snd ), pos, 75)
+	end
+end
+
+function ENT:PhysicsCollide( data, physobj )
+
+	if hook.Run( "simfphysPhysicsCollide", self, data, physobj ) then return end
+
+	if IsValid( data.HitEntity ) then
+		if data.HitEntity:IsNPC() or data.HitEntity:IsNextBot() or data.HitEntity:IsPlayer() then
+			Spark( data.HitPos , data.HitNormal , "MetalVehicle.ImpactSoft" )
+			return
+		end
+	end
+	
+	if ( data.Speed > 60 && data.DeltaTime > 0.2 ) then
+		
+		local pos = data.HitPos
+		
+		if (data.Speed > 1000) then
+			Spark( pos , data.HitNormal , "MetalVehicle.ImpactHard" )
+			
+			self:HurtPlayers( 5 )
+			
+			self:TakeDamage( (data.Speed / 7) * simfphys.DamageMul, Entity(0), Entity(0) )
+		else
+			Spark( pos , data.HitNormal , "MetalVehicle.ImpactSoft" )
+			
+			if data.Speed > 250 then
+				local hitent = data.HitEntity:IsPlayer()
+				if not hitent then
+					if simfphys.DamageMul > 1 then
+						self:TakeDamage( (data.Speed / 28) * simfphys.DamageMul, Entity(0), Entity(0) )
+					end
+				end
+			end
+			
+			if data.Speed > 500 then
+				self:HurtPlayers( 2 )
+				
+				self:TakeDamage( (data.Speed / 14) * simfphys.DamageMul, Entity(0), Entity(0) )
+			end
+		end
+	end
 end

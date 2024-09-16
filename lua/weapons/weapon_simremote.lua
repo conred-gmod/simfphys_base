@@ -1,6 +1,6 @@
 AddCSLuaFile()
 
-SWEP.Category			= "[LVS]"
+SWEP.Category			= "simfphys"
 SWEP.Spawnable		= true
 SWEP.AdminSpawnable	= false
 SWEP.ViewModel		= "models/weapons/c_pistol.mdl"
@@ -30,16 +30,12 @@ end
 
 if (CLIENT) then
 	SWEP.PrintName		= "Remote Controller"
-	SWEP.Purpose			= "remote controls [LVS] - Cars [Fake Physics] vehicles"
-	SWEP.Instructions		= "Left-Click on a Fake Physics Car to link. Press the Use-Key to start remote controlling."
+	SWEP.Purpose			= "remote controls simfphys vehicles"
+	SWEP.Instructions		= "Left-Click on a simfphys car to link. Press the Use-Key to start remote controlling."
 	SWEP.Author			= "Blu"
 	SWEP.Slot				= 1
 	SWEP.SlotPos			= 10
-
-	function SWEP:DrawWeaponSelection( x, y, wide, tall, alpha )
-		draw.SimpleText( "j", "WeaponIcons", x + wide/2, y + tall*0.2, Color( 255, 210, 0, 255 ), TEXT_ALIGN_CENTER )
-	end
-
+	
 	hook.Add( "PreDrawHalos", "s_remote_halos", function()
 		local ply = LocalPlayer()
 		local weapon = ply:GetActiveWeapon()
@@ -132,27 +128,25 @@ end
 
 function SWEP:Enable()
 	local car = self:GetCar()
-
-	if not IsValid( car ) then return end
-
-	local ply = self:GetOwner()
-
-	if IsValid( car:GetDriver() ) then
-		ply:ChatPrint("vehicle is already in use")
-
-		return
-	end
-
-	if car:GetlvsLockedStatus() then
-		ply:ChatPrint("vehicle is locked")
-	else
-		self:SetActive( true )
-		self.OldMoveType = ply:GetMoveType()
-
-		ply:SetMoveType( MOVETYPE_NONE )
-		ply:DrawViewModel( false )
-
-		car.RemoteDriver = ply
+	
+	if IsValid( car ) then
+	
+		local ply = self:GetOwner()
+		if IsValid( car:GetDriver() ) then
+			ply:ChatPrint("vehicle is already in use")
+		else
+			if car:GetIsVehicleLocked() then
+				ply:ChatPrint("vehicle is locked")
+			else
+				self:SetActive( true )
+				self.OldMoveType = ply:GetMoveType()
+				
+				ply:SetMoveType( MOVETYPE_NONE )
+				ply:DrawViewModel( false )
+				
+				car.RemoteDriver = ply
+			end
+		end
 	end
 end
 
